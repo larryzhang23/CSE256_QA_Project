@@ -38,6 +38,8 @@ class SQuADQANet(SQuADBase):
         self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
         for i, sample in enumerate(self.dataset):
+            print(f" {sample.keys()}, Sample: {sample}", )
+            quit()
             if len(sample["context"]) <= contextMaxLen:
                 self.legalDataIdx.append(i)
         self.idxHead = 0
@@ -56,7 +58,7 @@ class SQuADQANet(SQuADBase):
         
         raise StopIteration
             
-
+    
     def _helper(self, item):
         # only support training format for now
         if item["answers"]["answer_start"]:
