@@ -29,39 +29,11 @@ def word_tokenize(sent):
 CONTEXT_MAX_LEN = 400
 
 
-def get_vocabs(wordSet=set(), charSet=set(), articles=None):
-    """
-    wordSet: set of all possible words
-    charSet: set of all possible characters
-    articles:
-    """
-
-    # We will be using GloVe uncased
-    # Need to lower case every word/char
-
-    for it, article in enumerate(tqdm(articles)):
-        if len(article["context"]) >= CONTEXT_MAX_LEN:
-            continue
-        context, question = article["context"], article["question"]
-        context, question = context.lower(), question.lower()
-        context = context.replace("''", '" ').replace("``", '" ')
-        question = question.replace("''", '" ').replace("``", '" ')
-
-        tokenized_context = word_tokenize(context)
-        tokenized_question = word_tokenize(question)
-
-        wordSet.update(tokenized_context)
-        wordSet.update(tokenized_question)
-        charSet.update(context)
-        charSet.update(question)
-
-    return wordSet, charSet
-
-
-def get_word2idx_embedding(wordSet=None, name="6B", dim=50):
+def get_word2idx_embedding(wordSet, name="6B", dim=50):
     """Create word2idx dict
     word2idx is a dict from our wordSet and some special tokens to
     the index of the embedding matrix.
+
     args:
         wordSet: All possible words in corpus
         dim (int): dimension of GloVe
@@ -78,7 +50,7 @@ def get_word2idx_embedding(wordSet=None, name="6B", dim=50):
             idx += 1
 
     numNormalWords = len(word2idx.keys())
-
+    import pdb; pdb.set_trace()
     for i, word in special_tokens:
         word2idx[word] = numNormalWords + i
 
@@ -98,19 +70,23 @@ def get_word2idx_embedding(wordSet=None, name="6B", dim=50):
     return word2idx, embedding_layer
 
 
-def get_char2idx_embedding(charSet, dim=32):
+def get_char2idx(charSet):
     char2idx = {c: idx for idx, c in enumerate(charSet)}
     vocab_size = len(char2idx.keys())
     char2idx["unk"] = vocab_size
     char2idx["pad"] = vocab_size + 1
-    vocab_size = len(char2idx.keys())
 
-    emb_matrix = nn.Embedding(vocab_size, dim)
+    # dim = 32
+    # vocab_size = len(char2idx.keys())
+    # emb_matrix = nn.Embedding(vocab_size, dim)
     # May need to initalize weights here
-    return char2idx, emb_matrix
+    # return char2idx, emb_matrix
+    return char2idx
 
 
 if __name__ == "__main__":
-    charSet = set()
-    charSet.update("abs")
-    print(charSet)
+    from dataset import SQuADQANet
+    squadTrain = SQuADQANet("train")
+    article = squadTrain[0]
+ 
+
