@@ -51,6 +51,7 @@ class InputEmbedding(nn.Module):
 
         catEmbed = torch.concat((wordEmbed, charEmbed), dim=2)
         catEmbed = self.hn(catEmbed)
+        return catEmbed
         # mask = wordIdxTensor == self.unkIdx
 
         # if wordEmbed[mask].shape[0]:
