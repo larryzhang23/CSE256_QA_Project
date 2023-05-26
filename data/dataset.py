@@ -39,7 +39,7 @@ class SQuADQANet(SQuADBase, Dataset):
         split(str): train or validation
         contextMaxLen(int): max length of the context
     """
-    def __init__(self, split: str, contextMaxLen: int = 400):
+    def __init__(self, split: str, contextMaxLen: int = 400, questionMaxLen: int = 40):
         super().__init__(split)
         print("Preparing Dataset...")
         self.legalDataIdx = []
@@ -47,6 +47,7 @@ class SQuADQANet(SQuADBase, Dataset):
             if len(sample["context"]) <= contextMaxLen:
                 self.legalDataIdx.append(i)
         self.contextMaxLen = contextMaxLen
+        self.questionMaxLen = questionMaxLen
         self.glove = GloVe(name="6B", dim=50)
         self.char2idx = self._get_char2idx()
         self.idxHead = 0
@@ -115,7 +116,7 @@ class SQuADQANet(SQuADBase, Dataset):
             charSet.update(question)
             charSet.update(context)
         char2idx = {c: idx for idx, c in enumerate(charSet)}
-        vocab_size = len(char2idx.keys())
+        vocab_size = len(char2idx)
         char2idx["unk"] = vocab_size
         char2idx["pad"] = vocab_size + 1
         return char2idx
@@ -124,8 +125,8 @@ class SQuADQANet(SQuADBase, Dataset):
         elemIdx = self.legalDataIdx[idx]
         item = self.dataset[elemIdx]
         item = self._helper(item)
-        contextDict = self._get_embedding_idx(item["context"], sent_length=400)
-        questionDict = self._get_embedding_idx(item["question"], sent_length=25)
+        contextDict = self._get_embedding_idx(item["context"], sent_length=self.contextMaxLen)
+        questionDict = self._get_embedding_idx(item["question"], sent_length=self.questionMaxLen)
         index = torch.tensor(item["answers"]["index"], dtype=torch.int32)
         return contextDict, questionDict, index
     
@@ -146,9 +147,11 @@ if __name__ == '__main__':
     #     print(sample)
     #     if i >= 5:
     #         break
-    trainLoader = DataLoader(squadTrain, batch_size=2, shuffle=True)
-    for i, (contextDict, questionDict, label) in enumerate(trainLoader):
-        model(contextDict)
+    trainLoader = DataLoader(squadTrain, batch_size=32, shuffle=True)
+    for epoch in range(2):
+        for i, (contextDict, questionDict, label) in enumerate(trainLoader):
+            print(epoch, i)
+            model(contextDict)
         
     
     
