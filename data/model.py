@@ -56,12 +56,16 @@ class InputEmbedding(nn.Module):
 
 class DepthWiseConv1d(nn.Module):
     def __init__(self, dim, kernel_size=7, num_filters=128, use_pad=True):
+        """
+        args:
+            dim(int): glove_dim + char_dim
+        """
         super().__init__()
         padding = "same" if use_pad else "valid"
         self.depth = nn.Conv1d(
             in_channels=dim,
             out_channels=dim,
-            kernel_size=7,
+            kernel_size=kernel_size,
             groups=dim,
             bias=False,
             padding=padding,
