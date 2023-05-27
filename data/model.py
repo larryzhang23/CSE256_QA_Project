@@ -54,6 +54,26 @@ class InputEmbedding(nn.Module):
         return catEmbed
 
 
+class DepthWiseConv1d(nn.Module):
+    def __init__(self, dim, kernel_size=7, num_filters=128, use_pad=True):
+        super().__init__()
+        padding = "same" if use_pad else "valid"
+        self.depth = nn.Conv1d(
+            in_channels=dim,
+            out_channels=dim,
+            kernel_size=7,
+            groups=dim,
+            bias=False,
+            padding=padding,
+        )
+        self.pointwise = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
+
+    def forward(self, x):
+        # x shape: [B, sen_length, dim]
+        x = x.permute((0, 2, 1))  # [B, dim, sen_length]
+        return self.pointwise(self.depth(x)).permute((0, 2, 1))  # [B, sen_length, dim]
+
+
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
@@ -72,6 +92,9 @@ class BaseClf(nn.Module):
         emb_q = torch.mean(self.input_emb_q(q), dim=1)
         emb_c = torch.mean(self.input_emb_c(c), dim=1)
         emb = torch.cat((emb_q, emb_c), dim=-1)
+        import pdb
+
+        pdb.set_trace()
         return self.start_linear(emb), self.end_linear(emb)
 
 
