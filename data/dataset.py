@@ -8,7 +8,7 @@ from preprocess import word_tokenize
 
 class SQuADBase:
 
-    """ Wrapping class for hugging face dataset
+    """Wrapping class for hugging face dataset
 
     Args:
         split(str): train or validation
@@ -17,28 +17,29 @@ class SQuADBase:
     def __init__(self, split: str):
         self.dataset = load_dataset("squad_v2", split=split)
         self.split = split
-        
+
     def __iter__(self):
         return iter(self.dataset)
-    
+
     def __getitem__(self, idx):
         return self.dataset[idx]
 
     def __len__(self):
         return len(self.dataset)
-    
+
     def __str__(self):
         return str(self.dataset)
 
 
 class SQuADQANet(SQuADBase, Dataset):
-    
-    """ SQuAD dataset specialized for QANet
+
+    """SQuAD dataset specialized for QANet
 
     Args:
         split(str): train or validation
         contextMaxLen(int): max length of the context
     """
+
     def __init__(self, split: str, contextMaxLen: int = 400, questionMaxLen: int = 40):
         super().__init__(split)
         print("Preparing Dataset...")
@@ -51,25 +52,25 @@ class SQuADQANet(SQuADBase, Dataset):
         self.glove = GloVe(name="6B", dim=50)
         self.char2idx = self._get_char2idx()
         self.idxHead = 0
-    
+
     def __len__(self):
         return len(self.legalDataIdx)
-    
+
     def __iter__(self):
-        return self 
+        return self
 
     def __next__(self):
         if self.idxHead < len(self.legalDataIdx):
-            idx = self.idxHead 
+            idx = self.idxHead
             self.idxHead += 1
             return self[idx]
-        
+
         raise StopIteration
-            
+
     def _helper(self, item):
         # only support training format for now
         if item["answers"]["answer_start"]:
-            startIdx = item["answers"]["answer_start"][0] 
+            startIdx = item["answers"]["answer_start"][0]
             text = item["answers"]["text"][0]
             item["answers"]["text"] = text
             item["answers"]["index"] = (startIdx, startIdx + len(text) - 1)
@@ -80,7 +81,7 @@ class SQuADQANet(SQuADBase, Dataset):
             item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
             item["answers"].pop("answer_start")
         return item
-    
+
     def _get_embedding_idx(self, sent, word_length=16, sent_length=400):
         tokens = word_tokenize(sent.lower().replace("''", '" ').replace("``", '" '))
         pad_idx = self.glove.stoi["pad"]
@@ -94,17 +95,20 @@ class SQuADQANet(SQuADBase, Dataset):
                 res[i] = self.glove.stoi[token]
             else:
                 res[i] = unk_idx
-            
+
             for j, ch in enumerate(token):
-                if j >= word_length: 
+                if j >= word_length:
                     break
                 if ch in self.char2idx:
                     char_res[i, j] = self.char2idx[ch]
                 else:
                     char_res[i, j] = char_unk_idx
-            
-        return {"wordIdx": torch.tensor(res, dtype=torch.int32), "charIdx": torch.tensor(char_res, dtype=torch.int32)}
-    
+
+        return {
+            "wordIdx": torch.tensor(res, dtype=torch.int64),
+            "charIdx": torch.tensor(char_res, dtype=torch.int64),
+        }
+
     def _get_char2idx(self):
         charSet = set()
         for elemIdx in self.legalDataIdx:
@@ -120,25 +124,31 @@ class SQuADQANet(SQuADBase, Dataset):
         char2idx["unk"] = vocab_size
         char2idx["pad"] = vocab_size + 1
         return char2idx
-    
+
     def __getitem__(self, idx):
         elemIdx = self.legalDataIdx[idx]
         item = self.dataset[elemIdx]
         item = self._helper(item)
-        contextDict = self._get_embedding_idx(item["context"], sent_length=self.contextMaxLen)
-        questionDict = self._get_embedding_idx(item["question"], sent_length=self.questionMaxLen)
-        index = torch.tensor(item["answers"]["index"], dtype=torch.int32)
+        contextDict = self._get_embedding_idx(
+            item["context"], sent_length=self.contextMaxLen
+        )
+        questionDict = self._get_embedding_idx(
+            item["question"], sent_length=self.questionMaxLen
+        )
+        index = torch.tensor(item["answers"]["index"], dtype=torch.int64)
         return contextDict, questionDict, index
-    
+
     @property
     def charSetSize(self):
         return len(self.char2idx)
 
+
 # Test code
-if __name__ == '__main__':
+if __name__ == "__main__":
     # build actual dataset
     from torch.utils.data import DataLoader
     from model import InputEmbedding
+
     squadTrain = SQuADQANet("train")
     model = InputEmbedding(squadTrain.charSetSize)
     # print(len(squadTrain))
@@ -152,6 +162,3 @@ if __name__ == '__main__':
         for i, (contextDict, questionDict, label) in enumerate(trainLoader):
             print(epoch, i)
             model(contextDict)
-        
-    
-    
