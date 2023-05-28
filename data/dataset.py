@@ -209,7 +209,10 @@ class SQuADBert(SQuADBase):
             inputs["end_positions"] = end_positions
             return inputs
 
-        return self.dataset.map(dataset_transform, batched=True)
+        tokenized_dataset = self.dataset.map(dataset_transform, batched=True)
+        tokenized_dataset = tokenized_dataset.remove_columns(["id", "title", "context", "question", "answers"])
+        tokenized_dataset.set_format("torch")
+        return tokenized_dataset
 
     def __iter__(self):
         return iter(self.tokenized_dataset)
