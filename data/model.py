@@ -133,7 +133,7 @@ class ContextQueryAttn(nn.Module):
         simMat = self.w0(simMat)
         attn = self.softmax(simMat)
         # out shape: [B, 400, dim]
-        out = attn @ query.squeeze(1)
+        out = attn.squeeze(-1) @ query.squeeze(1)
         return out
 
 class BaseClf(nn.Module):
@@ -196,8 +196,8 @@ class BaseClf3(nn.Module):
         self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
         self.context_query_attn = ContextQueryAttn(dim=128)
         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(2 * (128), 401)
-        self.end_linear = nn.Linear(2 * (128), 401)
+        self.start_linear = nn.Linear(128, 401)
+        self.end_linear = nn.Linear(128, 401)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
