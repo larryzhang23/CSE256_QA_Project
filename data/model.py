@@ -264,8 +264,8 @@ if __name__ == "__main__":
     import torch.optim as optim
     import sys
 
-    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
-    # sys.path.append("D:\\UCSD\\CSE256\\project")
+    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")

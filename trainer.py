@@ -2,10 +2,10 @@ import torch
 from data.dataset import SQuADQANet
 
 def get_accuracy(pred_start, target_start, pred_end, target_end):
-    pred_start_idx = torch.argmax(pred_start.detach().cpu(), dim=1)
-    pred_end_idx = torch.argmax(pred_end.detach().cpu(), dim=1)
-    correct_start = pred_start_idx == target_start 
-    correct_end = pred_end_idx == target_end 
+    pred_start_idx = torch.argmax(pred_start.detach(), dim=1)
+    pred_end_idx = torch.argmax(pred_end.detach(), dim=1)
+    correct_start = pred_start_idx == target_start
+    correct_end = pred_end_idx == target_end
     correct = torch.logical_and(correct_start, correct_end)
     acc = torch.sum(correct).item() / len(pred_start_idx)
     return acc
