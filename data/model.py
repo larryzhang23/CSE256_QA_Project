@@ -243,8 +243,8 @@ if __name__ == "__main__":
     import sys
 
     # import pdb; pdb.set_trace()
-    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
-    # sys.path.append("D:\\UCSD\\CSE256\\project")
+    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
@@ -252,7 +252,12 @@ if __name__ == "__main__":
     # import pdb
 
     # pdb.set_trace()
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+    else:
+        device = torch.device("cpu")
     model = BaseClf3(numChar=squadTrain.charSetSize)
+    model.to(device)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
@@ -267,4 +272,4 @@ if __name__ == "__main__":
     #         model(contextDict, questionDict)
     #         quit()
 
-    trainer(200, trainLoader, model, criterion, optimizer)
+    trainer(200, trainLoader, model, criterion, optimizer, device)
