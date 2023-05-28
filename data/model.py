@@ -179,8 +179,12 @@ class ModelEncoder(nn.Module):
 
     def forward(self, C, A, B):
         concat = torch.cat([C, A, C * A, C * B], dim=-1)
-        out = self.blocks(concat)
-        return out
+        outputs = []
+        for block in self.blocks:
+            concat = block(concat)
+            outputs.append(concat)
+
+        return outputs
 
 
 class BaseClf(nn.Module):
@@ -244,17 +248,19 @@ class BaseClf3(nn.Module):
         self.context_query_attn = ContextQueryAttn(dim=128)
         self.model_enc = ModelEncoder(embedDim=4 * 128)
         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(128, 401)
-        self.end_linear = nn.Linear(128, 401)
+
+        self.start_linear = nn.Linear(2 * 128, 401)
+        self.end_linear = nn.Linear(2 * 128, 401)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
         emb_q = self.embed_enc_q(self.input_emb_q(q))
         emb_c = self.embed_enc_c(self.input_emb_c(c))
         A, B = self.context_query_attn(emb_c, emb_q)
-        emb = self.model_enc(emb_c, A, B)
-        emb = torch.mean(A, dim=1)
-        return self.start_linear(emb), self.end_linear(emb)
+        outputs = self.model_enc(emb_c, A, B)
+        emb_st = torch.cat((outputs[0], outputs[1]), dim=-1).mean(dim=1)
+        emb_en = torch.cat((outputs[0], outputs[2]), dim=-1).mean(dim=1)
+        return self.start_linear(emb_st), self.end_linear(emb_en)
 
 
 if __name__ == "__main__":
@@ -270,9 +276,6 @@ if __name__ == "__main__":
 
     squadTrain = SQuADQANet("train")
     subsetTrain = Subset(squadTrain, [i for i in range(128)])
-    # import pdb
-
-    # pdb.set_trace()
     model = BaseClf3(numChar=squadTrain.charSetSize)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
