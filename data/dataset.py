@@ -2,8 +2,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from datasets import load_dataset
+from transformers import AutoTokenizer
 from torchtext.vocab import GloVe
-from preprocess import word_tokenize
+from .preprocess import word_tokenize
 
 
 class SQuADBase:
@@ -141,6 +142,86 @@ class SQuADQANet(SQuADBase, Dataset):
     @property
     def charSetSize(self):
         return len(self.char2idx)
+
+
+class SQuADBert(SQuADBase):
+    """Wrapping class for hugging face dataset
+
+    Args:
+        split(str): train or validation
+        model_name(str): name of the model in huggingface
+    """
+
+    def __init__(self, split: str, model_name: str):
+        super().__init__(split)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenized_dataset = self._preprocess()
+
+    def _preprocess(self):
+        def dataset_transform(dataset):
+            questions = dataset["question"]
+            contexts = dataset["context"]
+            inputs = self.tokenizer(
+                questions,
+                contexts,
+                truncation="only_second",
+                return_offsets_mapping=True,
+                padding="max_length",
+            )
+
+            offset_mapping = inputs.pop("offset_mapping")
+            answers = dataset["answers"]
+            start_positions = []
+            end_positions = []
+
+            for i, offset in enumerate(offset_mapping):
+                answer = answers[i]
+                start_char = answer["answer_start"][0]
+                end_char = answer["answer_start"][0] + len(answer["text"][0])
+                sequence_ids = inputs.sequence_ids(i)
+
+                idx = 0
+                while sequence_ids[idx] != 1:
+                    idx += 1
+                context_start = idx
+                while sequence_ids[idx] == 1:
+                    idx += 1
+                context_end = idx - 1
+
+                if (
+                    offset[context_start][0] > end_char
+                    or offset[context_end][1] < start_char
+                ):
+                    start_positions.append(0)
+                    end_positions.append(0)
+                else:
+                    idx = context_start
+                    while idx <= context_end and offset[idx][0] <= start_char:
+                        idx += 1
+                    start_positions.append(idx - 1)
+
+                    idx = context_end
+                    while idx >= context_start and offset[idx][1] >= end_char:
+                        idx -= 1
+                    end_positions.append(idx + 1)
+
+            inputs["start_positions"] = start_positions
+            inputs["end_positions"] = end_positions
+            return inputs
+
+        return self.dataset.map(dataset_transform, batched=True)
+
+    def __iter__(self):
+        return iter(self.tokenized_dataset)
+
+    def __getitem__(self, idx):
+        return self.tokenized_dataset[idx]
+
+    def __len__(self):
+        return len(self.tokenized_dataset)
+
+    def __str__(self):
+        return str(self.tokenized_dataset)
 
 
 # Test code
