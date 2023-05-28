@@ -119,22 +119,31 @@ class ContextQueryAttn(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.w0 = nn.Linear(in_features=dim * 3, out_features=1, bias=False)
-        self.softmax = nn.Softmax(dim=-1)
-    
+
     def forward(self, context, query):
-        # context shape: [B, sent_length(400), 1, dim], query shape: [B, 1, sent_length(40), dim] 
+        # context shape: [B, sent_length(400), 1, dim], query shape: [B, 1, sent_length(40), dim]
         contextSentLen, querySentLen = context.size(1), query.size(1)
         context = context.unsqueeze(2)
         query = query.unsqueeze(1)
         elemMul = context * query
         # simMat shape: [B, 400, 40, 3 * dim]
-        simMat = torch.cat([context.expand(-1, -1, querySentLen, -1), query.expand(-1, contextSentLen, -1, -1), elemMul], dim=-1)
+        simMat = torch.cat(
+            [
+                context.expand(-1, -1, querySentLen, -1),
+                query.expand(-1, contextSentLen, -1, -1),
+                elemMul,
+            ],
+            dim=-1,
+        )
         # simMat shape: [B, 400, 40]
         simMat = self.w0(simMat)
-        attn = self.softmax(simMat)
+        S = F.softmax(simMat, dim=-1).squeeze(-1)
+        SS = F.softmax(simMat, dim=1).squeeze(-1)
         # out shape: [B, 400, dim]
-        out = attn.squeeze(-1) @ query.squeeze(1)
-        return out
+        A = S @ query.squeeze(1)
+        B = S @ SS.permute(0, 2, 1) @ context.squeeze(2)
+        return A, B
+
 
 class ModelEncoder(nn.Module):
     def __init__(self, embedDim, sent_length=400, numFilters=128, numConvLayers=2, nHeads=8, nBlocks=3):
@@ -234,8 +243,8 @@ if __name__ == "__main__":
     import sys
 
     # import pdb; pdb.set_trace()
-    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
-    sys.path.append("D:\\UCSD\\CSE256\\project")
+    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    # sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
