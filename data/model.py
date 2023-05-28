@@ -79,8 +79,40 @@ class DepthWiseConv1d(nn.Module):
         # x shape: [B, sen_length, dim]
         x_copy = self.up(x.permute(0, 2, 1))
         x = self.layernorm(x.permute((0, 2, 1)))  # [B, dim, sen_length]
-        x = self.pointwise(self.depth(x))
+        x = F.relu(self.pointwise(F.relu(self.depth(x))))
         return (x + x_copy).permute(0, 2, 1)  # [B, sen_length, dim]
+
+
+class EmbeddingEncoder(nn.Module):
+    def __init__(
+        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8
+    ):
+        super().__init__()
+        # convolution part
+        conv = [
+            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters)
+        ]
+        for _ in range(numConvLayers - 1):
+            conv.append(
+                DepthWiseConv1d(
+                    numFilters, sent_length=sent_length, num_filters=numFilters
+                )
+            )
+        self.conv = nn.Sequential(*conv)
+
+        # transformer part
+        self.transformerBlock = nn.TransformerEncoderLayer(
+            numFilters,
+            nhead=nHeads,
+            dim_feedforward=numFilters * 4,
+            layer_norm_eps=1e-6,
+            norm_first=True,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.transformerBlock(x)
+        return x
 
 
 class BaseClf(nn.Module):
@@ -127,38 +159,6 @@ class BaseClf2(nn.Module):
         emb_c = torch.mean(emb_c, dim=1)
         emb = torch.cat((emb_q, emb_c), dim=-1)
         return self.start_linear(emb), self.end_linear(emb)
-
-
-class EmbeddingEncoder(nn.Module):
-    def __init__(
-        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8
-    ):
-        super().__init__()
-        # convolution part
-        conv = [
-            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters)
-        ]
-        for _ in range(numConvLayers - 1):
-            conv.append(
-                DepthWiseConv1d(
-                    numFilters, sent_length=sent_length, num_filters=numFilters
-                )
-            )
-        self.conv = nn.Sequential(*conv)
-
-        # transformer part
-        self.transformerBlock = nn.TransformerEncoderLayer(
-            numFilters,
-            nhead=nHeads,
-            dim_feedforward=numFilters * 4,
-            layer_norm_eps=1e-6,
-            norm_first=True,
-        )
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.transformerBlock(x)
-        return x
 
 
 if __name__ == "__main__":
