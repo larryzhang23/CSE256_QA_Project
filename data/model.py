@@ -146,22 +146,42 @@ class ContextQueryAttn(nn.Module):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, embedDim, sent_length=400, numFilters=128, numConvLayers=2, nHeads=8, nBlocks=3):
+    def __init__(
+        self,
+        embedDim,
+        sent_length=400,
+        numFilters=128,
+        numConvLayers=2,
+        nHeads=8,
+        nBlocks=3,
+    ):
         super().__init__()
         blocks = [
+            EmbeddingEncoder(
+                embedDim=embedDim,
+                sent_length=sent_length,
+                numFilters=numFilters,
+                numConvLayers=numConvLayers,
+                nHeads=nHeads,
+            )
+        ]
+        for _ in range(nBlocks - 1):
+            blocks.append(
                 EmbeddingEncoder(
-                        embedDim=embedDim, 
-                        sent_length=sent_length, 
-                        numFilters=numFilters, 
-                        numConvLayers=numConvLayers, 
-                        nHeads=nHeads) for _ in range(nBlocks)
-                ]
+                    embedDim=numFilters,
+                    sent_length=sent_length,
+                    numFilters=numFilters,
+                    numConvLayers=numConvLayers,
+                    nHeads=nHeads,
+                )
+            )
         self.blocks = nn.Sequential(*blocks)
 
     def forward(self, C, A, B):
         concat = torch.cat([C, A, C * A, C * B], dim=-1)
         out = self.blocks(concat)
         return out
+
 
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
@@ -222,6 +242,7 @@ class BaseClf3(nn.Module):
         self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
         self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
         self.context_query_attn = ContextQueryAttn(dim=128)
+        self.model_enc = ModelEncoder(embedDim=4 * 128)
         # [B, sent_length, 400]
         self.start_linear = nn.Linear(128, 401)
         self.end_linear = nn.Linear(128, 401)
@@ -230,8 +251,9 @@ class BaseClf3(nn.Module):
         # [B, glove_dim + char_dim]
         emb_q = self.embed_enc_q(self.input_emb_q(q))
         emb_c = self.embed_enc_c(self.input_emb_c(c))
-        emb_attn = self.context_query_attn(emb_c, emb_q)
-        emb = torch.mean(emb_attn, dim=1)
+        A, B = self.context_query_attn(emb_c, emb_q)
+        emb = self.model_enc(emb_c, A, B)
+        emb = torch.mean(A, dim=1)
         return self.start_linear(emb), self.end_linear(emb)
 
 
@@ -242,9 +264,8 @@ if __name__ == "__main__":
     import torch.optim as optim
     import sys
 
-    # import pdb; pdb.set_trace()
-    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
-    sys.path.append("D:\\UCSD\\CSE256\\project")
+    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    # sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
