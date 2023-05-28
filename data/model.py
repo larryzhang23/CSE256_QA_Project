@@ -136,6 +136,24 @@ class ContextQueryAttn(nn.Module):
         out = attn.squeeze(-1) @ query.squeeze(1)
         return out
 
+class ModelEncoder(nn.Module):
+    def __init__(self, embedDim, sent_length=400, numFilters=128, numConvLayers=2, nHeads=8, nBlocks=3):
+        super().__init__()
+        blocks = [
+                EmbeddingEncoder(
+                        embedDim=embedDim, 
+                        sent_length=sent_length, 
+                        numFilters=numFilters, 
+                        numConvLayers=numConvLayers, 
+                        nHeads=nHeads) for _ in range(nBlocks)
+                ]
+        self.blocks = nn.Sequential(*blocks)
+
+    def forward(self, C, A, B):
+        concat = torch.cat([C, A, C * A, C * B], dim=-1)
+        out = self.blocks(concat)
+        return out
+
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
