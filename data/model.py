@@ -115,6 +115,27 @@ class EmbeddingEncoder(nn.Module):
         return x
 
 
+class ContextQueryAttn(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.w0 = nn.Linear(in_features=dim * 3, out_features=1, bias=False)
+        self.softmax = nn.Softmax(dim=-1)
+    
+    def forward(self, context, query):
+        # context shape: [B, sent_length(400), 1, dim], query shape: [B, 1, sent_length(40), dim] 
+        contextSentLen, querySentLen = context.size(1), query.size(1)
+        context = context.unsqueeze(2)
+        query = query.unsqueeze(1)
+        elemMul = context * query
+        # simMat shape: [B, 400, 40, 3 * dim]
+        simMat = torch.cat([context.expand(-1, -1, querySentLen, -1), query.expand(-1, contextSentLen, -1, -1), elemMul], dim=-1)
+        # simMat shape: [B, 400, 40]
+        simMat = self.w0(simMat)
+        attn = self.softmax(simMat)
+        # out shape: [B, 400, dim]
+        out = attn @ query.squeeze(1)
+        return out
+
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
@@ -161,6 +182,32 @@ class BaseClf2(nn.Module):
         return self.start_linear(emb), self.end_linear(emb)
 
 
+class BaseClf3(nn.Module):
+    def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
+        super().__init__()
+        # [B, sent_length, glove_dim + char_dim]
+        self.input_emb_q = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, sent_length=40
+        )
+        self.input_emb_c = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, sent_length=400
+        )
+        self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
+        self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
+        self.context_query_attn = ContextQueryAttn(dim=dimChar + dimGlove)
+        # [B, sent_length, 400]
+        self.start_linear = nn.Linear(2 * (128), 401)
+        self.end_linear = nn.Linear(2 * (128), 401)
+
+    def forward(self, c, q):
+        # [B, glove_dim + char_dim]
+        emb_q = self.embed_enc_q(self.input_emb_q(q))
+        emb_c = self.embed_enc_c(self.input_emb_c(c))
+        emb_attn = self.context_query_attn(emb_c, emb_q)
+        emb = torch.mean(emb_attn, dim=1)
+        return self.start_linear(emb), self.end_linear(emb)
+
+
 if __name__ == "__main__":
     from dataset import SQuADQANet
     from torch.utils.data import DataLoader, Subset
@@ -178,7 +225,7 @@ if __name__ == "__main__":
     # import pdb
 
     # pdb.set_trace()
-    model = BaseClf2(numChar=squadTrain.charSetSize)
+    model = BaseClf3(numChar=squadTrain.charSetSize)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
