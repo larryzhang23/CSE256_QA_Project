@@ -73,13 +73,14 @@ class DepthWiseConv1d(nn.Module):
         self.pointwise = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
         # self.dropout = nn.Dropout(p=0.1)
         self.layernorm = nn.LayerNorm([dim, sent_length], eps=1e-6)
+        self.up = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
 
     def forward(self, x):
         # x shape: [B, sen_length, dim]
-        x_copy = x
+        x_copy = self.up(x.permute(0, 2, 1))
         x = self.layernorm(x.permute((0, 2, 1)))  # [B, dim, sen_length]
-        x = self.pointwise(self.depth(x)).permute((0, 2, 1))
-        return x + x_copy  # [B, sen_length, dim]
+        x = self.pointwise(self.depth(x))
+        return (x + x_copy).permute(0, 2, 1)  # [B, sen_length, dim]
 
 
 class BaseClf(nn.Module):
@@ -91,12 +92,11 @@ class BaseClf(nn.Module):
             numChar=numChar, dimChar=dimChar, sent_length=40
         )
         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(2 * (dimGlove + dimChar), 401)
-        self.end_linear = nn.Linear(2 * (dimGlove + dimChar), 401)
+        self.start_linear = nn.Linear(2 * (dimChar + dimGlove), 401)
+        self.end_linear = nn.Linear(2 * (dimChar + dimGlove), 401)
 
     def forward(self, q, c):
         # [B, glove_dim + char_dim]
-
         emb_q = torch.mean(self.input_emb_q(q), dim=1)
         emb_c = torch.mean(self.input_emb_c(c), dim=1)
         emb = torch.cat((emb_q, emb_c), dim=-1)
@@ -107,17 +107,19 @@ class BaseClf2(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
-        self.input_emb_q = InputEmbedding(numChar=numChar, dimChar=dimChar)
-        self.input_emb_c = InputEmbedding(
+        self.input_emb_q = InputEmbedding(
             numChar=numChar, dimChar=dimChar, sent_length=40
+        )
+        self.input_emb_c = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, sent_length=400
         )
         self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
         self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
-         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(2 * (dimGlove + dimChar), 401)
-        self.end_linear = nn.Linear(2 * (dimGlove + dimChar), 401)
+        # [B, sent_length, 400]
+        self.start_linear = nn.Linear(2 * (128), 401)
+        self.end_linear = nn.Linear(2 * (128), 401)
 
-    def forward(self, q, c):
+    def forward(self, c, q):
         # [B, glove_dim + char_dim]
         emb_q = self.embed_enc_q(self.input_emb_q(q))
         emb_c = self.embed_enc_c(self.input_emb_c(c))
@@ -128,28 +130,36 @@ class BaseClf2(nn.Module):
 
 
 class EmbeddingEncoder(nn.Module):
-    def __init__(self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8):
+    def __init__(
+        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8
+    ):
         super().__init__()
         # convolution part
-        conv = [DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters)]
+        conv = [
+            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters)
+        ]
         for _ in range(numConvLayers - 1):
-            conv.append(DepthWiseConv1d(numFilters, sent_length=sent_length, num_filters=numFilters))
+            conv.append(
+                DepthWiseConv1d(
+                    numFilters, sent_length=sent_length, num_filters=numFilters
+                )
+            )
         self.conv = nn.Sequential(*conv)
 
         # transformer part
         self.transformerBlock = nn.TransformerEncoderLayer(
-            numFilters, 
-            nhead=nHeads, 
-            dim_feedforward=numFilters*4, 
+            numFilters,
+            nhead=nHeads,
+            dim_feedforward=numFilters * 4,
             layer_norm_eps=1e-6,
             norm_first=True,
         )
-    
 
     def forward(self, x):
         x = self.conv(x)
         x = self.transformerBlock(x)
         return x
+
 
 if __name__ == "__main__":
     from dataset import SQuADQANet
@@ -157,9 +167,10 @@ if __name__ == "__main__":
     from model import InputEmbedding
     import torch.optim as optim
     import sys
+
     # import pdb; pdb.set_trace()
-    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
-    sys.path.append("D:\\UCSD\\CSE256\\project")
+    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    # sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
@@ -172,7 +183,7 @@ if __name__ == "__main__":
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=5e-3,
+        lr=1e-3,
     )
     criterion = nn.CrossEntropyLoss()
 
@@ -182,4 +193,4 @@ if __name__ == "__main__":
     #         model(contextDict, questionDict)
     #         quit()
 
-    trainer(50, trainLoader, model, criterion, optimizer)
+    trainer(200, trainLoader, model, criterion, optimizer)
