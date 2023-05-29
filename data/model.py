@@ -85,12 +85,12 @@ class DepthWiseConv1d(nn.Module):
 
 class EmbeddingEncoder(nn.Module):
     def __init__(
-        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8
+        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8, ker_size=7,
     ):
         super().__init__()
         # convolution part
         conv = [
-            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters)
+            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters, kernel_size=ker_size)
         ]
         for _ in range(numConvLayers - 1):
             conv.append(
@@ -163,6 +163,7 @@ class ModelEncoder(nn.Module):
                 numFilters=numFilters,
                 numConvLayers=numConvLayers,
                 nHeads=nHeads,
+                ker_size=5,
             )
         ]
         for _ in range(nBlocks - 1):
@@ -173,6 +174,7 @@ class ModelEncoder(nn.Module):
                     numFilters=numFilters,
                     numConvLayers=numConvLayers,
                     nHeads=nHeads,
+                    ker_size=5
                 )
             )
         self.blocks = nn.Sequential(*blocks)
@@ -212,10 +214,10 @@ class BaseClf2(nn.Module):
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb_q = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=40
+            numChar=numChar, dimChar=dimChar, sent_length=40, dimGlove=dimGlove
         )
         self.input_emb_c = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=400
+            numChar=numChar, dimChar=dimChar, sent_length=400, dimGlove=dimGlove
         )
         self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
         self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
@@ -238,10 +240,10 @@ class BaseClf3(nn.Module):
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb_q = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=40
+            numChar=numChar, dimChar=dimChar, sent_length=40, dimGlove=dimGlove
         )
         self.input_emb_c = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=400
+            numChar=numChar, dimChar=dimChar, sent_length=400, dimGlove=dimGlove
         )
         self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
         self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
@@ -275,7 +277,7 @@ if __name__ == "__main__":
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
-    subsetTrain = Subset(squadTrain, [i for i in range(128)])
+    subsetTrain = Subset(squadTrain, [i for i in range(1024)])
     # import pdb
 
     # pdb.set_trace()
@@ -283,10 +285,10 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-    model = BaseClf3(numChar=squadTrain.charSetSize)
+    model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
     optimizer = optim.AdamW(
         model.parameters(),
         lr=1e-3,
