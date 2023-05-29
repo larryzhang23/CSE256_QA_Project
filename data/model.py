@@ -153,7 +153,7 @@ class ModelEncoder(nn.Module):
         numFilters=128,
         numConvLayers=2,
         nHeads=8,
-        nBlocks=3,
+        nBlocks=7,
     ):
         super().__init__()
         blocks = [
@@ -181,12 +181,10 @@ class ModelEncoder(nn.Module):
 
     def forward(self, C, A, B):
         concat = torch.cat([C, A, C * A, C * B], dim=-1)
-        outputs = []
-        for block in self.blocks:
-            concat = block(concat)
-            outputs.append(concat)
-
-        return outputs
+        M0 = self.blocks(concat)
+        M1 = self.blocks(M0)
+        M2 = self.blocks(M1)
+        return [M0, M1, M2]
 
 
 class BaseClf(nn.Module):
@@ -277,7 +275,7 @@ if __name__ == "__main__":
     from trainer import trainer
 
     squadTrain = SQuADQANet("train")
-    subsetTrain = Subset(squadTrain, [i for i in range(1024)])
+    subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
     # pdb.set_trace()
@@ -285,7 +283,7 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-    model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    model = BaseClf3(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     model.to(device)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
