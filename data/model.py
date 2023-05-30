@@ -181,40 +181,30 @@ class ModelEncoder(nn.Module):
         self,
         embedDim,
         sent_length=400,
-        numFilters=128,
         numConvLayers=2,
         nHeads=8,
         nBlocks=7,
     ):
         super().__init__()
         self.embedDim = embedDim
-        blocks = [
-            EmbeddingEncoder(
-                embedDim=embedDim // 4,
-                sent_length=sent_length,
-                numFilters=numFilters,
-                numConvLayers=numConvLayers,
-                nHeads=nHeads,
-                ker_size=5,
-            )
-        ]
-        for _ in range(nBlocks - 1):
+        blocks = []
+        for _ in range(nBlocks):
             blocks.append(
                 EmbeddingEncoder(
-                    embedDim=numFilters,
+                    embedDim=embedDim,
                     sent_length=sent_length,
-                    numFilters=numFilters,
+                    numFilters=embedDim,
                     numConvLayers=numConvLayers,
                     nHeads=nHeads,
                     ker_size=5,
                 )
             )
         self.blocks = nn.Sequential(*blocks)
-        self.conv1 = nn.Conv1d(embedDim, embedDim // 4, kernel_size=1)
+        self.linear = nn.Linear(embedDim * 4, embedDim, bias=False)
 
     def forward(self, C, A, B):
-        concat = torch.cat([C, A, C * A, C * B], dim=-1).permute((0, 2, 1))
-        concat = self.conv1(concat).permute((0, 2, 1))
+        concat = torch.cat([C, A, C * A, C * B], dim=-1)
+        concat = self.linear(concat)
         M0 = self.blocks(concat)
         M1 = self.blocks(M0)
         M2 = self.blocks(M1)
