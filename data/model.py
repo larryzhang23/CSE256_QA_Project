@@ -103,13 +103,24 @@ class PositionalEncoding(nn.Module):
     
 class EmbeddingEncoder(nn.Module):
     def __init__(
-        self, embedDim, sent_length, numFilters=128, numConvLayers=4, nHeads=8, ker_size=7,
+        self,
+        embedDim,
+        sent_length,
+        numFilters=128,
+        numConvLayers=4,
+        nHeads=8,
+        ker_size=7,
     ):
         super().__init__()
         self.pos_embed = PositionalEncoding(embedDim, sent_length)
         # convolution part
         conv = [
-            DepthWiseConv1d(embedDim, sent_length=sent_length, num_filters=numFilters, kernel_size=ker_size)
+            DepthWiseConv1d(
+                embedDim,
+                sent_length=sent_length,
+                num_filters=numFilters,
+                kernel_size=ker_size,
+            )
         ]
         for _ in range(numConvLayers - 1):
             conv.append(
@@ -176,9 +187,10 @@ class ModelEncoder(nn.Module):
         nBlocks=7,
     ):
         super().__init__()
+        self.embedDim = embedDim
         blocks = [
             EmbeddingEncoder(
-                embedDim=embedDim,
+                embedDim=embedDim // 4,
                 sent_length=sent_length,
                 numFilters=numFilters,
                 numConvLayers=numConvLayers,
@@ -194,13 +206,15 @@ class ModelEncoder(nn.Module):
                     numFilters=numFilters,
                     numConvLayers=numConvLayers,
                     nHeads=nHeads,
-                    ker_size=5
+                    ker_size=5,
                 )
             )
         self.blocks = nn.Sequential(*blocks)
+        self.conv1 = nn.Conv1d(embedDim, embedDim // 4, kernel_size=1)
 
     def forward(self, C, A, B):
-        concat = torch.cat([C, A, C * A, C * B], dim=-1)
+        concat = torch.cat([C, A, C * A, C * B], dim=-1).permute((0, 2, 1))
+        concat = self.conv1(concat).permute((0, 2, 1))
         M0 = self.blocks(concat)
         M1 = self.blocks(M0)
         M2 = self.blocks(M1)
@@ -290,7 +304,7 @@ if __name__ == "__main__":
     import torch.optim as optim
     import sys
 
-    # sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
+    sys.path.append("/Users/jwiroj/Desktop/CSE256_QA_Project/")
     sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
