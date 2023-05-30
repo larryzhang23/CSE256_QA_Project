@@ -1,5 +1,5 @@
 import torch
-from data.dataset import SQuADQANet
+from dataset import SQuADQANet
 
 def get_accuracy(pred_start, target_start, pred_end, target_end):
     pred_start_idx = torch.argmax(pred_start.detach(), dim=1)
