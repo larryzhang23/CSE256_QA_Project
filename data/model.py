@@ -293,7 +293,7 @@ if __name__ == "__main__":
     sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
-    squadTrain = SQuADQANet("train")
+    squadTrain = SQuADQANet("train", contextMaxLen=401)
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
@@ -302,12 +302,12 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-    device = torch.device("cpu")
+
     model = QANet(numChar=squadTrain.charSetSize, dimChar=16, dimGlove=50)
     print(model.count_params())
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=16, shuffle=False)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
         model.parameters(),
         lr=1e-3,

@@ -24,8 +24,13 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, device):
 
         optimizer.zero_grad()
         pred_start, pred_end = model(contextDict, questionDict)
-        loss_start = lossFunc(pred_start, target_start)
-        loss_end = lossFunc(pred_end, target_end)
+        try:
+            loss_start = lossFunc(pred_start, target_start)
+            loss_end = lossFunc(pred_end, target_end)
+        except:
+            print(target_start)
+            print(pred_start)
+            return
         loss = loss_start + loss_end
         loss.backward()
         optimizer.step()

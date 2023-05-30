@@ -78,7 +78,7 @@ class SQuADQANet(SQuADBase, Dataset):
         else:
             # for unanswerable questions, set startIdx = 400, endIdx = 400
             item["answers"]["text"] = ""
-            item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
+            item["answers"]["index"] = (self.contextMaxLen - 1, self.contextMaxLen - 1)
             item["answers"].pop("answer_start")
         return item
 
