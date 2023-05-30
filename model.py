@@ -299,11 +299,11 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=16, dimGlove=50)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(model.count_params())
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=16, shuffle=False)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
         model.parameters(),
         lr=1e-3,
