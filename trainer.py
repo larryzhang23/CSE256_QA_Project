@@ -32,11 +32,11 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, device):
         acc = get_accuracy(pred_start, target_start, pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
-        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():4f} -- acc: {acc:4f}")
+        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}")
     avg_acc /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
-    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:4f} -- avg acc: {avg_acc:4f}")
+    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg acc: {(avg_acc * 100):.2f}")
     return {"avg_loss": avg_loss, "avg_acc": avg_acc}
 
 def trainer(epochs, trainLoader, model, lossFunc, optimizer, device):

@@ -6,36 +6,34 @@ import torch.nn.functional as F
 
 
 class HighwayNetwork(nn.Module):
-    def __init__(self, sent_length, num_layers=2, act_type="relu"):
+    def __init__(self, dim, num_layers=2, act_type="relu"):
         super().__init__()
         self.n_layers = num_layers
         self.act = nn.ReLU() if act_type == "relu" else nn.Sigmoid()
         self.linear_layers = nn.ModuleList(
-            [nn.Linear(sent_length, sent_length) for _ in range(num_layers)]
+            [nn.Linear(dim, dim) for _ in range(num_layers)]
         )
         self.gate_layers = nn.ModuleList(
-            [nn.Linear(sent_length, sent_length) for _ in range(num_layers)]
+            [nn.Linear(dim, dim) for _ in range(num_layers)]
         )
 
     def forward(self, x):
         # x: [B, sent_length, dim]
-        x = x.permute((0, 2, 1))  # [B, dim, sent_length]
-
         for i in range(self.n_layers):
             T = F.sigmoid(self.gate_layers[i](x))
             H = self.act(self.linear_layers[i](x))
             x = T * H + (1 - T) * x
-        return x.permute((0, 2, 1))  # [B, sent_length, dim]
+        return x  # [B, sent_length, dim]
 
 
 class InputEmbedding(nn.Module):
-    def __init__(self, numChar, sent_length=400, dimChar=16, dimGlove=50):
+    def __init__(self, numChar, dimChar=200, dimGlove=300):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
         glove = GloVe(name="6B", dim=dimGlove)
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=True)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
-        self.hn = HighwayNetwork(sent_length)
+        self.hn = HighwayNetwork(dimChar + dimGlove)
 
     def forward(self, x):
         # wordIdxTensor shape: [B, sent_length], charIdxTensor shape: [B, sent_length, 16]
@@ -56,7 +54,7 @@ class InputEmbedding(nn.Module):
 
 
 class DepthWiseConv1d(nn.Module):
-    def __init__(self, dim, sent_length, kernel_size=7, num_filters=128, use_pad=True):
+    def __init__(self, dim, kernel_size=7, num_filters=128, use_pad=True):
         """
         args:
             dim(int): glove_dim + char_dim
@@ -73,13 +71,13 @@ class DepthWiseConv1d(nn.Module):
         )
         self.pointwise = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
         # self.dropout = nn.Dropout(p=0.1)
-        self.layernorm = nn.LayerNorm([dim, sent_length], eps=1e-6)
+        # self.layernorm = nn.LayerNorm([dim, sent_length], eps=1e-6)
         self.up = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
 
     def forward(self, x):
         # x shape: [B, sen_length, dim]
-        x_copy = self.up(x.permute(0, 2, 1))
-        x = self.layernorm(x.permute((0, 2, 1)))  # [B, dim, sen_length]
+        x = x.permute((0, 2, 1))
+        x_copy = self.up(x)
         x = F.relu(self.pointwise(F.relu(self.depth(x))))
         return (x + x_copy).permute(0, 2, 1)  # [B, sen_length, dim]
 
@@ -105,19 +103,16 @@ class EmbeddingEncoder(nn.Module):
     def __init__(
         self,
         embedDim,
-        sent_length,
         numFilters=128,
         numConvLayers=4,
         nHeads=8,
         ker_size=7,
     ):
         super().__init__()
-        self.pos_embed = PositionalEncoding(embedDim, sent_length)
         # convolution part
         conv = [
             DepthWiseConv1d(
                 embedDim,
-                sent_length=sent_length,
                 num_filters=numFilters,
                 kernel_size=ker_size,
             )
@@ -125,7 +120,7 @@ class EmbeddingEncoder(nn.Module):
         for _ in range(numConvLayers - 1):
             conv.append(
                 DepthWiseConv1d(
-                    numFilters, sent_length=sent_length, num_filters=numFilters
+                    numFilters, num_filters=numFilters
                 )
             )
         self.conv = nn.Sequential(*conv)
@@ -135,12 +130,10 @@ class EmbeddingEncoder(nn.Module):
             numFilters,
             nhead=nHeads,
             dim_feedforward=numFilters * 4,
-            layer_norm_eps=1e-6,
             norm_first=True,
         )
 
     def forward(self, x):
-        x = self.pos_embed(x)
         x = self.conv(x)
         x = self.transformerBlock(x)
         return x
@@ -180,7 +173,6 @@ class ModelEncoder(nn.Module):
     def __init__(
         self,
         embedDim,
-        sent_length=400,
         numConvLayers=2,
         nHeads=8,
         nBlocks=7,
@@ -192,7 +184,6 @@ class ModelEncoder(nn.Module):
             blocks.append(
                 EmbeddingEncoder(
                     embedDim=embedDim,
-                    sent_length=sent_length,
                     numFilters=embedDim,
                     numConvLayers=numConvLayers,
                     nHeads=nHeads,
@@ -257,37 +248,38 @@ class BaseClf2(nn.Module):
         return self.start_linear(emb), self.end_linear(emb)
 
 
-class BaseClf3(nn.Module):
-    def __init__(self, numChar, contextMaxLen=401, dimChar=16, dimGlove=50) -> None:
+class QANet(nn.Module):
+    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
-        self.input_emb_q = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=40, dimGlove=dimGlove
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
         )
-        self.input_emb_c = InputEmbedding(
-            numChar=numChar,
-            dimChar=dimChar,
-            sent_length=contextMaxLen,
-            dimGlove=dimGlove,
-        )
-        self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
-        self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, contextMaxLen)
-        self.context_query_attn = ContextQueryAttn(dim=128)
-        self.model_enc = ModelEncoder(embedDim=4 * 128, sent_length=contextMaxLen)
-        # [B, sent_length, 400]
+        
+        self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
+        self.context_query_attn = ContextQueryAttn(dim=dim)
+        self.model_enc = ModelEncoder(embedDim=dim)
+        # [B, sent_length, 401]
 
-        self.start_linear = nn.Linear(2 * 128, 1)
-        self.end_linear = nn.Linear(2 * 128, 1)
+        self.start_linear = nn.Linear(2 * dim, 1)
+        self.end_linear = nn.Linear(2 * dim, 1)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
-        emb_q = self.embed_enc_q(self.input_emb_q(q))
-        emb_c = self.embed_enc_c(self.input_emb_c(c))
+        emb_q = self.embed_enc(self.input_emb(q))
+        emb_c = self.embed_enc(self.input_emb(c))
         A, B = self.context_query_attn(emb_c, emb_q)
         outputs = self.model_enc(emb_c, A, B)
         emb_st = torch.cat((outputs[0], outputs[1]), dim=-1)
         emb_en = torch.cat((outputs[0], outputs[2]), dim=-1)
-        return self.start_linear(emb_st), self.end_linear(emb_en)
+        pred_start = self.start_linear(emb_st) 
+        pred_end = self.end_linear(emb_en)
+        return pred_start.squeeze(), pred_end.squeeze()
+    
+    def count_params(self):
+        num_params = sum(param.numel() for param in self.parameters())
+        return f"{(num_params / 1e6):.2f}M"
+
 
 
 if __name__ == "__main__":
@@ -301,7 +293,7 @@ if __name__ == "__main__":
     sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
-    squadTrain = SQuADQANet("train", contextMaxLen=401)
+    squadTrain = SQuADQANet("train")
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
@@ -310,10 +302,12 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-    model = BaseClf3(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    device = torch.device("cpu")
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=16, dimGlove=50)
+    print(model.count_params())
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=16, shuffle=False)
     optimizer = optim.AdamW(
         model.parameters(),
         lr=1e-3,
