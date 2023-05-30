@@ -248,23 +248,26 @@ class BaseClf2(nn.Module):
 
 
 class BaseClf3(nn.Module):
-    def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
+    def __init__(self, numChar, contextMaxLen=401, dimChar=16, dimGlove=50) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb_q = InputEmbedding(
             numChar=numChar, dimChar=dimChar, sent_length=40, dimGlove=dimGlove
         )
         self.input_emb_c = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=400, dimGlove=dimGlove
+            numChar=numChar,
+            dimChar=dimChar,
+            sent_length=contextMaxLen,
+            dimGlove=dimGlove,
         )
         self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
-        self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
+        self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, contextMaxLen)
         self.context_query_attn = ContextQueryAttn(dim=128)
-        self.model_enc = ModelEncoder(embedDim=4 * 128)
+        self.model_enc = ModelEncoder(embedDim=4 * 128, sent_length=contextMaxLen)
         # [B, sent_length, 400]
 
-        self.start_linear = nn.Linear(2 * 128, 401)
-        self.end_linear = nn.Linear(2 * 128, 401)
+        self.start_linear = nn.Linear(2 * 128, 1)
+        self.end_linear = nn.Linear(2 * 128, 1)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
@@ -272,8 +275,8 @@ class BaseClf3(nn.Module):
         emb_c = self.embed_enc_c(self.input_emb_c(c))
         A, B = self.context_query_attn(emb_c, emb_q)
         outputs = self.model_enc(emb_c, A, B)
-        emb_st = torch.cat((outputs[0], outputs[1]), dim=-1).mean(dim=1)
-        emb_en = torch.cat((outputs[0], outputs[2]), dim=-1).mean(dim=1)
+        emb_st = torch.cat((outputs[0], outputs[1]), dim=-1)
+        emb_en = torch.cat((outputs[0], outputs[2]), dim=-1)
         return self.start_linear(emb_st), self.end_linear(emb_en)
 
 
@@ -288,7 +291,7 @@ if __name__ == "__main__":
     sys.path.append("D:\\UCSD\\CSE256\\project")
     from trainer import trainer
 
-    squadTrain = SQuADQANet("train")
+    squadTrain = SQuADQANet("train", contextMaxLen=401)
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
