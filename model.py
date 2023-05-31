@@ -292,8 +292,8 @@ if __name__ == "__main__":
 
     datasetVersion = "v1"
     squadTrain = SQuADQANet("train", version=datasetVersion)
-    subsetTrain = squadTrain
-    # subsetTrain = Subset(squadTrain, [i for i in range(512)])
+    # subsetTrain = squadTrain
+    subsetTrain = Subset(squadTrain, [i for i in range(256)])
     # import pdb
 
     # pdb.set_trace()
@@ -307,7 +307,7 @@ if __name__ == "__main__":
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
