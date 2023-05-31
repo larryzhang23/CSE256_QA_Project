@@ -427,7 +427,7 @@ if __name__ == "__main__":
     datasetVersion = "v1"
     glove_dim = 300
     char_dim = 200
-    glove_version = "6B"
+    glove_version = "42B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     # subsetTrain = squadTrain
     subsetTrain = Subset(squadTrain, [i for i in range(128)])
@@ -454,10 +454,11 @@ if __name__ == "__main__":
     )
 
     # exponential moving average
-    ema = EMA(0.9999)
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            ema.register(name, param.data)
+    ema = None
+    # ema = EMA(0.9999)
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         ema.register(name, param.data)
     
     warm_up_iters = 1000
     lr_func = lr_scheduler_func(warm_up_iters=warm_up_iters)
