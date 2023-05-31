@@ -36,6 +36,7 @@ class InputEmbedding(nn.Module):
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
+        self.pad_idx = glove.stoi["pad"]
 
     def forward(self, x):
         # wordIdxTensor shape: [B, sent_length], charIdxTensor shape: [B, sent_length, 16]
@@ -90,11 +91,13 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len):
         super().__init__()
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
+        )
         pe = torch.zeros(1, max_len, d_model)
         pe[0, :, 0::2] = torch.sin(position * div_term)
         pe[0, :, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
         """
@@ -102,7 +105,8 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape ``[batch_size, sent_length, embedding_dim]``
         """
         return x + self.pe
-    
+
+
 class EmbeddingEncoder(nn.Module):
     def __init__(
         self,
@@ -122,11 +126,7 @@ class EmbeddingEncoder(nn.Module):
             )
         ]
         for _ in range(numConvLayers - 1):
-            conv.append(
-                DepthWiseConv1d(
-                    numFilters, num_filters=numFilters
-                )
-            )
+            conv.append(DepthWiseConv1d(numFilters, num_filters=numFilters))
         self.conv = nn.Sequential(*conv)
 
         # transformer part
@@ -136,7 +136,7 @@ class EmbeddingEncoder(nn.Module):
             dim_feedforward=numFilters * 4,
             norm_first=True,
             batch_first=True,
-            dropout=0.
+            dropout=0.0,
         )
         self.nHeads = nHeads
 
@@ -232,6 +232,7 @@ class ModelEncoder(nn.Module):
             M2 = block(M2, mask_idx)
         return [M0, M1, M2]
 
+
 class ModelEncoderV2(nn.Module):
     def __init__(
         self,
@@ -255,12 +256,13 @@ class ModelEncoderV2(nn.Module):
             )
         self.blocks = nn.Sequential(*blocks)
         self.linear = nn.Linear(embedDim * 4, embedDim, bias=False)
-    
+
     def forward(self, C, A, B):
         concat = torch.cat([C, A, C * A, C * B], dim=-1)
         concat = self.linear(concat)
         M0 = self.blocks(concat)
         return M0
+
 
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
@@ -302,19 +304,23 @@ class BaseClf2(nn.Module):
         emb_c = torch.mean(emb_c, dim=1)
         emb = torch.cat((emb_q, emb_c), dim=-1)
         return self.start_linear(emb), self.end_linear(emb)
-    
+
     def count_params(self):
         num_params = sum(param.numel() for param in self.parameters())
         return f"{(num_params / 1e6):.2f}M"
 
 
 class QANet(nn.Module):
-    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True) -> None:
+    def __init__(
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+    ) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
             numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
+        self.pad = self.input_emb.pad_idx
+
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoder(embedDim=dim)
@@ -349,13 +355,15 @@ class QANet(nn.Module):
 
 
 class QANetV2(nn.Module):
-    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True) -> None:
+    def __init__(
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+    ) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
             numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
-        
+
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoderV2(embedDim=dim)
@@ -369,14 +377,15 @@ class QANetV2(nn.Module):
         emb_c = self.embed_enc(self.input_emb(c))
         A, B = self.context_query_attn(emb_c, emb_q)
         out = self.model_enc(emb_c, A, B)
-        pred_start = self.start_linear(out) 
+        pred_start = self.start_linear(out)
         pred_end = self.end_linear(out)
         return pred_start.squeeze(), pred_end.squeeze()
-    
+
     def count_params(self):
         params = filter(lambda x: x.requires_grad, self.parameters())
         num_params = sum(param.numel() for param in params)
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
+
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader, Subset
