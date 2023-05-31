@@ -205,6 +205,35 @@ class ModelEncoder(nn.Module):
         M2 = self.blocks(M1)
         return [M0, M1, M2]
 
+class ModelEncoderV2(nn.Module):
+    def __init__(
+        self,
+        embedDim,
+        numConvLayers=2,
+        nHeads=8,
+        nBlocks=7,
+    ):
+        super().__init__()
+        self.embedDim = embedDim
+        blocks = []
+        for _ in range(nBlocks):
+            blocks.append(
+                EmbeddingEncoder(
+                    embedDim=embedDim,
+                    numFilters=embedDim,
+                    numConvLayers=numConvLayers,
+                    nHeads=nHeads,
+                    ker_size=5,
+                )
+            )
+        self.blocks = nn.Sequential(*blocks)
+        self.linear = nn.Linear(embedDim * 4, embedDim, bias=False)
+    
+    def forward(self, C, A, B):
+        concat = torch.cat([C, A, C * A, C * B], dim=-1)
+        concat = self.linear(concat)
+        M0 = self.blocks(concat)
+        return M0
 
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
@@ -264,7 +293,6 @@ class QANet(nn.Module):
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoder(embedDim=dim)
         # [B, sent_length, 401]
-
         self.start_linear = nn.Linear(2 * dim, 1)
         self.end_linear = nn.Linear(2 * dim, 1)
 
@@ -281,10 +309,40 @@ class QANet(nn.Module):
         return pred_start.squeeze(), pred_end.squeeze()
     
     def count_params(self):
-        num_params = sum(param.numel() for param in self.parameters())
-        return f"{(num_params / 1e6):.2f}M"
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 
+class QANetV2(nn.Module):
+    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300) -> None:
+        super().__init__()
+        # [B, sent_length, glove_dim + char_dim]
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+        )
+        
+        self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
+        self.context_query_attn = ContextQueryAttn(dim=dim)
+        self.model_enc = ModelEncoderV2(embedDim=dim)
+        # [B, sent_length, 401]
+        self.start_linear = nn.Linear(dim, 1)
+        self.end_linear = nn.Linear(dim, 1)
+
+    def forward(self, c, q):
+        # [B, glove_dim + char_dim]
+        emb_q = self.embed_enc(self.input_emb(q))
+        emb_c = self.embed_enc(self.input_emb(c))
+        A, B = self.context_query_attn(emb_c, emb_q)
+        out = self.model_enc(emb_c, A, B)
+        pred_start = self.start_linear(out) 
+        pred_end = self.end_linear(out)
+        return pred_start.squeeze(), pred_end.squeeze()
+    
+    def count_params(self):
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader, Subset
@@ -305,7 +363,7 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    model = QANetV2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
