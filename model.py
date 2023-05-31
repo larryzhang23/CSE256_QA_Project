@@ -290,7 +290,8 @@ if __name__ == "__main__":
     from dataset import SQuADQANet
     from trainer import trainer, lr_scheduler_func
 
-    squadTrain = SQuADQANet("train", contextMaxLen=401)
+    datasetVersion = "v1"
+    squadTrain = SQuADQANet("train", version=datasetVersion)
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 

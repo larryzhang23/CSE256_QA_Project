@@ -19,8 +19,11 @@ class SQuADBase:
         split(str): train or validation
     """
 
-    def __init__(self, split: str):
-        self.dataset = load_dataset("squad_v2", split=split)
+    def __init__(self, version, split: str):
+        if version == "v1":
+            self.dataset = load_dataset("squad", split=split)
+        else:
+            self.dataset = load_dataset("squad_v2", split=split)
         self.split = split
 
     def __iter__(self):
@@ -45,14 +48,15 @@ class SQuADQANet(SQuADBase, Dataset):
         contextMaxLen(int): max length of the context
     """
 
-    def __init__(self, split: str, contextMaxLen: int = 400, questionMaxLen: int = 40):
-        super().__init__(split)
+    def __init__(self, split: str, questionMaxLen: int = 40, version: str = "v1"):
+        super().__init__(version, split)
         print("Preparing Dataset...")
         self.legalDataIdx = []
+        self.contextMaxLen = 400 if version == "v1" else 401
         for i, sample in enumerate(self.dataset):
-            if len(sample["context"]) <= contextMaxLen:
+            if len(sample["context"]) <= self.contextMaxLen:
                 self.legalDataIdx.append(i)
-        self.contextMaxLen = contextMaxLen
+        self.contextMaxLen = self.contextMaxLen
         self.questionMaxLen = questionMaxLen
         self.glove = GloVe(name="6B", dim=50)
         self.char2idx = self._get_char2idx()
