@@ -44,6 +44,25 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
     avg_loss /= len(trainLoader)
     print("=================")
     print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg acc: {(avg_acc * 100):.2f}%")
+
+    ### debug ###
+    if epoch > 0 and epoch % 5 == 0:
+        for it, (contextDict, questionDict, target) in enumerate(trainLoader):
+            contextDict["wordIdx"] = contextDict["wordIdx"].to(device, non_blocking=True)
+            contextDict["charIdx"] = contextDict["charIdx"].to(device, non_blocking=True)
+            questionDict["wordIdx"] = questionDict["wordIdx"].to(device, non_blocking=True)
+            questionDict["charIdx"] = questionDict["charIdx"].to(device, non_blocking=True)
+            with torch.no_grad():
+                pred_start, pred_end = model(contextDict, questionDict)
+                pred_start = torch.argmax(pred_start, dim=1)
+                pred_end = torch.argmax(pred_end, dim=1)
+                pred_start = pred_start.cpu().numpy().tolist()
+                pred_end = pred_end.cpu().numpy().tolist()
+                print("pred: ", list(zip(pred_start, pred_end)))
+                print("target: ", target.numpy().tolist())
+            if it >= 0:
+                break
+                
     return {"avg_loss": avg_loss, "avg_acc": avg_acc}
 
 def trainer(epochs, trainLoader, model, lossFunc, optimizer, lr_scheduler, device):

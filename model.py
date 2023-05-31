@@ -363,12 +363,12 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=False)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=True)
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=2, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
