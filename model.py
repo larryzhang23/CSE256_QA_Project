@@ -36,7 +36,6 @@ class InputEmbedding(nn.Module):
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
-        self.pad_idx = glove.stoi["pad"]
 
     def forward(self, x):
         # wordIdxTensor shape: [B, sent_length], charIdxTensor shape: [B, sent_length, 16]
@@ -148,7 +147,6 @@ class EmbeddingEncoder(nn.Module):
             mask = mask.unsqueeze(1).expand(-1, self.nHeads, -1, -1).reshape((mask.size(0) * self.nHeads, sent_length, sent_length))
         else:
             mask = None
-        import pdb; pdb.set_trace()
         x = self.transformerBlock(x, mask)
         if mask_idx is not None:
             x = torch.nan_to_num(x)
@@ -319,7 +317,6 @@ class QANet(nn.Module):
         self.input_emb = InputEmbedding(
             numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
-        self.pad = self.input_emb.pad_idx
 
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         self.context_query_attn = ContextQueryAttn(dim=dim)
