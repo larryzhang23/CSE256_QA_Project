@@ -292,7 +292,8 @@ if __name__ == "__main__":
 
     datasetVersion = "v1"
     squadTrain = SQuADQANet("train", version=datasetVersion)
-    subsetTrain = Subset(squadTrain, [i for i in range(512)])
+    subsetTrain = squadTrain
+    # subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
     # pdb.set_trace()
