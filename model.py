@@ -445,7 +445,7 @@ if __name__ == "__main__":
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=2, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
