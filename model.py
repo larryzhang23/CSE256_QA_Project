@@ -430,7 +430,7 @@ if __name__ == "__main__":
     glove_version = "6B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     # subsetTrain = squadTrain
-    subsetTrain = Subset(squadTrain, [i for i in range(512)])
+    subsetTrain = Subset(squadTrain, [i for i in range(128)])
     # import pdb
 
     # pdb.set_trace()
