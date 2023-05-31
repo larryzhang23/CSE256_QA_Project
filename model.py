@@ -425,7 +425,10 @@ if __name__ == "__main__":
     from trainer import trainer, lr_scheduler_func
 
     datasetVersion = "v1"
-    squadTrain = SQuADQANet("train", version=datasetVersion, glove_version="42B")
+    glove_dim = 300
+    char_dim = 200
+    glove_version = "42B"
+    squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     # subsetTrain = squadTrain
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
@@ -436,7 +439,7 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
     
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=True)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True)
 
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
