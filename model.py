@@ -27,11 +27,11 @@ class HighwayNetwork(nn.Module):
 
 
 class InputEmbedding(nn.Module):
-    def __init__(self, numChar, dimChar=200, dimGlove=300):
+    def __init__(self, numChar, dimChar=200, dimGlove=300, freeze=True):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
         glove = GloVe(name="6B", dim=dimGlove)
-        self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=True)
+        self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
         self.pad_idx = glove.stoi["pad"]
@@ -41,7 +41,7 @@ class InputEmbedding(nn.Module):
         wordIdxTensor, charIdxTensor = x["wordIdx"], x["charIdx"]
         # charEmbedding shape: [B, sent_length, 16, char_dim]
         charEmbed = self.charEmbed(charIdxTensor)
-        charEmbed = self.conv(charEmbed.permute(0, 3, 1, 2))
+        charEmbed = F.relu(self.conv(charEmbed.permute(0, 3, 1, 2)))
         charEmbed, _ = torch.max(charEmbed, dim=-1)
         charEmbed = charEmbed.permute(0, 2, 1)  # new shape: [B,sent_length, char_ndim]
         # wordEmbedding shape: [B, sent_length, glove_dim]
@@ -63,24 +63,26 @@ class DepthWiseConv1d(nn.Module):
         super().__init__()
         padding = "same" if use_pad else "valid"
         self.depth = nn.Conv1d(
-            in_channels=dim,
-            out_channels=dim,
+            in_channels=num_filters,
+            out_channels=num_filters,
             kernel_size=kernel_size,
-            groups=dim,
+            groups=num_filters,
             bias=False,
             padding=padding,
         )
-        self.pointwise = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
+        self.pointwise = nn.Conv1d(num_filters, num_filters, kernel_size=1, bias=False)
+        self.map = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
         # self.dropout = nn.Dropout(p=0.1)
-        # self.layernorm = nn.LayerNorm([dim, sent_length], eps=1e-6)
-        self.up = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
+        self.layernorm = nn.LayerNorm(num_filters)
 
     def forward(self, x):
         # x shape: [B, sen_length, dim]
-        x = x.permute((0, 2, 1))
-        x_copy = self.up(x)
+        x = x.permute(0, 2, 1)
+        x = self.map(x)
+        x_res = x
+        x = self.layernorm(x.permute(0, 2, 1)).permute(0, 2, 1)
         x = F.relu(self.pointwise(F.relu(self.depth(x))))
-        return (x + x_copy).permute(0, 2, 1)  # [B, sen_length, dim]
+        return (x + x_res).permute(0, 2, 1)  # [B, sen_length, dim]
 
 
 class PositionalEncoding(nn.Module):
@@ -132,6 +134,7 @@ class EmbeddingEncoder(nn.Module):
             dim_feedforward=numFilters * 4,
             norm_first=True,
             batch_first=True,
+            dropout=0.0,
         )
 
     def forward(self, x):
@@ -203,6 +206,37 @@ class ModelEncoder(nn.Module):
         return [M0, M1, M2]
 
 
+class ModelEncoderV2(nn.Module):
+    def __init__(
+        self,
+        embedDim,
+        numConvLayers=2,
+        nHeads=8,
+        nBlocks=7,
+    ):
+        super().__init__()
+        self.embedDim = embedDim
+        blocks = []
+        for _ in range(nBlocks):
+            blocks.append(
+                EmbeddingEncoder(
+                    embedDim=embedDim,
+                    numFilters=embedDim,
+                    numConvLayers=numConvLayers,
+                    nHeads=nHeads,
+                    ker_size=5,
+                )
+            )
+        self.blocks = nn.Sequential(*blocks)
+        self.linear = nn.Linear(embedDim * 4, embedDim, bias=False)
+
+    def forward(self, C, A, B):
+        concat = torch.cat([C, A, C * A, C * B], dim=-1)
+        concat = self.linear(concat)
+        M0 = self.blocks(concat)
+        return M0
+
+
 class BaseClf(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
@@ -250,11 +284,13 @@ class BaseClf2(nn.Module):
 
 
 class QANet(nn.Module):
-    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300) -> None:
+    def __init__(
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+    ) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
         self.pad = self.input_emb.pad_idx
 
@@ -262,7 +298,6 @@ class QANet(nn.Module):
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoder(embedDim=dim)
         # [B, sent_length, 401]
-
         self.start_linear = nn.Linear(2 * dim, 1)
         self.end_linear = nn.Linear(2 * dim, 1)
 
@@ -283,8 +318,42 @@ class QANet(nn.Module):
         return pred_start.squeeze(), pred_end.squeeze()
 
     def count_params(self):
-        num_params = sum(param.numel() for param in self.parameters())
-        return f"{(num_params / 1e6):.2f}M"
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
+
+
+class QANetV2(nn.Module):
+    def __init__(
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+    ) -> None:
+        super().__init__()
+        # [B, sent_length, glove_dim + char_dim]
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
+        )
+
+        self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
+        self.context_query_attn = ContextQueryAttn(dim=dim)
+        self.model_enc = ModelEncoderV2(embedDim=dim)
+        # [B, sent_length, 401]
+        self.start_linear = nn.Linear(dim, 1)
+        self.end_linear = nn.Linear(dim, 1)
+
+    def forward(self, c, q):
+        # [B, glove_dim + char_dim]
+        emb_q = self.embed_enc(self.input_emb(q))
+        emb_c = self.embed_enc(self.input_emb(c))
+        A, B = self.context_query_attn(emb_c, emb_q)
+        out = self.model_enc(emb_c, A, B)
+        pred_start = self.start_linear(out)
+        pred_end = self.end_linear(out)
+        return pred_start.squeeze(), pred_end.squeeze()
+
+    def count_params(self):
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 
 if __name__ == "__main__":
@@ -294,7 +363,9 @@ if __name__ == "__main__":
     from dataset import SQuADQANet
     from trainer import trainer, lr_scheduler_func
 
-    squadTrain = SQuADQANet("train", contextMaxLen=401)
+    datasetVersion = "v1"
+    squadTrain = SQuADQANet("train", version=datasetVersion)
+    # subsetTrain = squadTrain
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
@@ -304,15 +375,19 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    model = QANet(
+        numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=True
+    )
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
-    optimizer = optim.AdamW(
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    optimizer = optim.Adam(
         model.parameters(),
-        lr=2e-3,
+        betas=(0.8, 0.999),
+        eps=1e-7,
+        lr=1e-3,
     )
 
     warm_up_iters = 1000
