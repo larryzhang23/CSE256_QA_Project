@@ -131,6 +131,7 @@ class EmbeddingEncoder(nn.Module):
             nhead=nHeads,
             dim_feedforward=numFilters * 4,
             norm_first=True,
+            batch_first=True,
         )
 
     def forward(self, x):
@@ -226,26 +227,26 @@ class BaseClf2(nn.Module):
     def __init__(self, numChar, dimChar=16, dimGlove=50) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
-        self.input_emb_q = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=40, dimGlove=dimGlove
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
         )
-        self.input_emb_c = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, sent_length=400, dimGlove=dimGlove
-        )
-        self.embed_enc_q = EmbeddingEncoder(dimChar + dimGlove, 40)
-        self.embed_enc_c = EmbeddingEncoder(dimChar + dimGlove, 400)
+        self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         # [B, sent_length, 400]
         self.start_linear = nn.Linear(2 * (128), 401)
         self.end_linear = nn.Linear(2 * (128), 401)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
-        emb_q = self.embed_enc_q(self.input_emb_q(q))
-        emb_c = self.embed_enc_c(self.input_emb_c(c))
+        emb_q = self.embed_enc(self.input_emb(q))
+        emb_c = self.embed_enc(self.input_emb(c))
         emb_q = torch.mean(emb_q, dim=1)
         emb_c = torch.mean(emb_c, dim=1)
         emb = torch.cat((emb_q, emb_c), dim=-1)
         return self.start_linear(emb), self.end_linear(emb)
+
+    def count_params(self):
+        num_params = sum(param.numel() for param in self.parameters())
+        return f"{(num_params / 1e6):.2f}M"
 
 
 class QANet(nn.Module):
@@ -291,7 +292,7 @@ if __name__ == "__main__":
     import torch.optim as optim
     from model import InputEmbedding
     from dataset import SQuADQANet
-    from trainer import trainer
+    from trainer import trainer, lr_scheduler_func
 
     squadTrain = SQuADQANet("train", contextMaxLen=401)
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
@@ -303,8 +304,9 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=16, dimGlove=50)
-    print(model.count_params())
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
@@ -312,6 +314,10 @@ if __name__ == "__main__":
         model.parameters(),
         lr=2e-3,
     )
+
+    warm_up_iters = 1000
+    lr_func = lr_scheduler_func(warm_up_iters=warm_up_iters)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
     criterion = nn.CrossEntropyLoss()
 
     # for epoch in range(2):
@@ -320,4 +326,4 @@ if __name__ == "__main__":
     #         model(contextDict, questionDict)
     #         quit()
 
-    trainer(200, trainLoader, model, criterion, optimizer, device)
+    trainer(200, trainLoader, model, criterion, optimizer, lr_scheduler, device)
