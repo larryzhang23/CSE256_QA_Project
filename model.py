@@ -40,7 +40,7 @@ class InputEmbedding(nn.Module):
         wordIdxTensor, charIdxTensor = x["wordIdx"], x["charIdx"]
         # charEmbedding shape: [B, sent_length, 16, char_dim]
         charEmbed = self.charEmbed(charIdxTensor)
-        charEmbed = self.conv(charEmbed.permute(0, 3, 1, 2))
+        charEmbed = F.relu(self.conv(charEmbed.permute(0, 3, 1, 2)))
         charEmbed, _ = torch.max(charEmbed, dim=-1)
         charEmbed = charEmbed.permute(0, 2, 1)  # new shape: [B,sent_length, char_ndim]
         # wordEmbedding shape: [B, sent_length, glove_dim]
@@ -62,24 +62,26 @@ class DepthWiseConv1d(nn.Module):
         super().__init__()
         padding = "same" if use_pad else "valid"
         self.depth = nn.Conv1d(
-            in_channels=dim,
-            out_channels=dim,
+            in_channels=num_filters,
+            out_channels=num_filters,
             kernel_size=kernel_size,
-            groups=dim,
+            groups=num_filters,
             bias=False,
             padding=padding,
         )
-        self.pointwise = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
+        self.pointwise = nn.Conv1d(num_filters, num_filters, kernel_size=1, bias=False)
+        self.map = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
         # self.dropout = nn.Dropout(p=0.1)
-        # self.layernorm = nn.LayerNorm([dim, sent_length], eps=1e-6)
-        self.up = nn.Conv1d(dim, num_filters, kernel_size=1, bias=False)
+        self.layernorm = nn.LayerNorm(num_filters)
 
     def forward(self, x):
         # x shape: [B, sen_length, dim]
-        x = x.permute((0, 2, 1))
-        x_copy = self.up(x)
+        x = x.permute(0, 2, 1)
+        x = self.map(x)
+        x_res = x
+        x = self.layernorm(x.permute(0, 2, 1)).permute(0, 2, 1)
         x = F.relu(self.pointwise(F.relu(self.depth(x))))
-        return (x + x_copy).permute(0, 2, 1)  # [B, sen_length, dim]
+        return (x + x_res).permute(0, 2, 1)  # [B, sen_length, dim]
 
 
 class PositionalEncoding(nn.Module):
@@ -132,6 +134,7 @@ class EmbeddingEncoder(nn.Module):
             dim_feedforward=numFilters * 4,
             norm_first=True,
             batch_first=True,
+            dropout=0.
         )
 
     def forward(self, x):
@@ -293,7 +296,7 @@ if __name__ == "__main__":
     datasetVersion = "v1"
     squadTrain = SQuADQANet("train", version=datasetVersion)
     # subsetTrain = squadTrain
-    subsetTrain = Subset(squadTrain, [i for i in range(256)])
+    subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
 
     # pdb.set_trace()
