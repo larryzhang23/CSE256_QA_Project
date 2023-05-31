@@ -330,19 +330,19 @@ class QANet(nn.Module):
         c_word_idx = c["wordIdx"]
         q_word_idx = q["wordIdx"]
         word_pad_idx = self.input_emb.wordPadIdx
-        c_word_mask = c_word_idx == word_pad_idx 
-        q_word_mask = q_word_idx == word_pad_idx 
-        # c_word_mask, q_word_mask = None, None
+        # c_word_mask = c_word_idx == word_pad_idx 
+        # q_word_mask = q_word_idx == word_pad_idx 
+        c_word_mask, q_word_mask = None, None
         emb_q = self.embed_enc(self.input_emb(q), q_word_mask)
         emb_c = self.embed_enc(self.input_emb(c), c_word_mask)
         A, B = self.context_query_attn(emb_c, emb_q, c_word_mask, q_word_mask)
         outputs = self.model_enc(emb_c, A, B, c_word_mask)
         emb_st = torch.cat((outputs[0], outputs[1]), dim=-1)
         emb_en = torch.cat((outputs[0], outputs[2]), dim=-1)
-        pred_start = self.start_linear(emb_st).squeeze().masked_fill(c_word_mask, -1e30)
-        pred_end = self.end_linear(emb_en).squeeze().masked_fill(c_word_mask, -1e30)
-        # pred_start = self.start_linear(emb_st).squeeze()
-        # pred_end = self.end_linear(emb_en).squeeze()
+        # pred_start = self.start_linear(emb_st).squeeze().masked_fill(c_word_mask, -1e30)
+        # pred_end = self.end_linear(emb_en).squeeze().masked_fill(c_word_mask, -1e30)
+        pred_start = self.start_linear(emb_st).squeeze()
+        pred_end = self.end_linear(emb_en).squeeze()
         return pred_start, pred_end
     
     def count_params(self):
@@ -384,6 +384,39 @@ class QANetV2(nn.Module):
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 
+class EMA():
+
+    def __init__(self, mu):
+        self.mu = mu
+        self.shadow = {}
+        self.original = {}
+
+    def register(self, name, val):
+        self.shadow[name] = val.clone()
+
+    def __call__(self, model, num_updates):
+        decay = min(self.mu, (1.0 + num_updates) / (10.0 + num_updates))
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = \
+                    (1.0 - decay) * param.data + decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+
+    def assign(self, model):
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.original[name] = param.data.clone()
+                param.data = self.shadow[name]
+
+    def resume(self, model):
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                param.data = self.original[name]
+
+
 if __name__ == "__main__":
     from torch.utils.data import DataLoader, Subset
     import torch.optim as optim
@@ -392,7 +425,7 @@ if __name__ == "__main__":
     from trainer import trainer, lr_scheduler_func
 
     datasetVersion = "v1"
-    squadTrain = SQuADQANet("train", version=datasetVersion)
+    squadTrain = SQuADQANet("train", version=datasetVersion, glove_version="42B")
     # subsetTrain = squadTrain
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
     # import pdb
@@ -402,8 +435,9 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-    device = torch.device("cpu")
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=20, dimGlove=50, freeze=True)
+    
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=True)
+
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
@@ -416,6 +450,12 @@ if __name__ == "__main__":
         lr=1e-3,
     )
 
+    # exponential moving average
+    ema = EMA(0.9999)
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            ema.register(name, param.data)
+    
     warm_up_iters = 1000
     lr_func = lr_scheduler_func(warm_up_iters=warm_up_iters)
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
@@ -427,4 +467,4 @@ if __name__ == "__main__":
     #         model(contextDict, questionDict)
     #         quit()
 
-    trainer(200, trainLoader, model, criterion, optimizer, lr_scheduler, device)
+    trainer(200, trainLoader, model, criterion, optimizer, lr_scheduler, device, ema)

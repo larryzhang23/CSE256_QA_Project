@@ -12,9 +12,11 @@ def get_accuracy(pred_start, target_start, pred_end, target_end):
     return acc
 
 
-def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device):
+def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     avg_acc, avg_loss = 0, 0
     model.train()
+
+    total_steps = epoch * len(trainLoader)
     for it, (contextDict, questionDict, target) in enumerate(trainLoader):
         target_start = target[:, 0].to(device, non_blocking=True)
         target_end = target[:, 1].to(device, non_blocking=True)
@@ -37,6 +39,12 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         avg_acc += acc
         print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}% --lr {lr_scheduler.get_last_lr()}")
         lr_scheduler.step()
+
+        if ema is not None:
+            ema(model, total_steps)
+        total_steps += 1
+
+
     avg_acc /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
@@ -62,9 +70,9 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
                 
     return {"avg_loss": avg_loss, "avg_acc": avg_acc}
 
-def trainer(epochs, trainLoader, model, lossFunc, optimizer, lr_scheduler, device):
+def trainer(epochs, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     for epoch in range(epochs):
-        stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler,device)
+        stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
 
 def lr_scheduler_func(warm_up_iters=1000):
     maxVal = 1 / math.log(warm_up_iters)

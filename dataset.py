@@ -48,7 +48,7 @@ class SQuADQANet(SQuADBase, Dataset):
         contextMaxLen(int): max length of the context
     """
 
-    def __init__(self, split: str, questionMaxLen: int = 40, version: str = "v1"):
+    def __init__(self, split: str, questionMaxLen: int = 40, version: str = "v1", glove_version: str = "6B"):
         super().__init__(version, split)
         print("Preparing Dataset...")
         self.legalDataIdx = []
@@ -58,7 +58,7 @@ class SQuADQANet(SQuADBase, Dataset):
                 self.legalDataIdx.append(i)
         self.contextMaxLen = self.contextMaxLen
         self.questionMaxLen = questionMaxLen
-        self.glove = GloVe(name="6B", dim=50)
+        self.glove = GloVe(name=glove_version, dim=50)
         self.char2idx = self._get_char2idx()
         self.idxHead = 0
 
