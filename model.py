@@ -427,7 +427,7 @@ if __name__ == "__main__":
     datasetVersion = "v1"
     glove_dim = 300
     char_dim = 200
-    glove_version = "42B"
+    glove_version = "6B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     # subsetTrain = squadTrain
     subsetTrain = Subset(squadTrain, [i for i in range(512)])
