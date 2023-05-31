@@ -34,6 +34,7 @@ class InputEmbedding(nn.Module):
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=True)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
+        self.pad_idx = glove.stoi["pad"]
 
     def forward(self, x):
         # wordIdxTensor shape: [B, sent_length], charIdxTensor shape: [B, sent_length, 16]
@@ -86,11 +87,13 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len):
         super().__init__()
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
+        )
         pe = torch.zeros(1, max_len, d_model)
         pe[0, :, 0::2] = torch.sin(position * div_term)
         pe[0, :, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
         """
@@ -98,7 +101,8 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape ``[batch_size, sent_length, embedding_dim]``
         """
         return x + self.pe
-    
+
+
 class EmbeddingEncoder(nn.Module):
     def __init__(
         self,
@@ -118,11 +122,7 @@ class EmbeddingEncoder(nn.Module):
             )
         ]
         for _ in range(numConvLayers - 1):
-            conv.append(
-                DepthWiseConv1d(
-                    numFilters, num_filters=numFilters
-                )
-            )
+            conv.append(DepthWiseConv1d(numFilters, num_filters=numFilters))
         self.conv = nn.Sequential(*conv)
 
         # transformer part
@@ -255,7 +255,8 @@ class QANet(nn.Module):
         self.input_emb = InputEmbedding(
             numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
         )
-        
+        self.pad = self.input_emb.pad_idx
+
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoder(embedDim=dim)
@@ -266,20 +267,23 @@ class QANet(nn.Module):
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
+        # glove unk: 10109
+        # char2idx pad: 323
+        maskword_c = torch.ones_like(c["wordIdx"]) * (c["wordIdx"] != self.pad)
+        maskword_q = torch.ones_like(q["wordIdx"]) * (q["wordIdx"] != self.pad)
         emb_q = self.embed_enc(self.input_emb(q))
         emb_c = self.embed_enc(self.input_emb(c))
         A, B = self.context_query_attn(emb_c, emb_q)
         outputs = self.model_enc(emb_c, A, B)
         emb_st = torch.cat((outputs[0], outputs[1]), dim=-1)
         emb_en = torch.cat((outputs[0], outputs[2]), dim=-1)
-        pred_start = self.start_linear(emb_st) 
+        pred_start = self.start_linear(emb_st)
         pred_end = self.end_linear(emb_en)
         return pred_start.squeeze(), pred_end.squeeze()
-    
+
     def count_params(self):
         num_params = sum(param.numel() for param in self.parameters())
         return f"{(num_params / 1e6):.2f}M"
-
 
 
 if __name__ == "__main__":
@@ -299,14 +303,14 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=16, dimGlove=50)
     print(model.count_params())
     model.to(device)
 
     trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=1e-3,
+        lr=2e-3,
     )
     criterion = nn.CrossEntropyLoss()
 
