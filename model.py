@@ -27,11 +27,11 @@ class HighwayNetwork(nn.Module):
 
 
 class InputEmbedding(nn.Module):
-    def __init__(self, numChar, dimChar=200, dimGlove=300):
+    def __init__(self, numChar, dimChar=200, dimGlove=300, freeze=True):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
         glove = GloVe(name="6B", dim=dimGlove)
-        self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=True)
+        self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
 
@@ -282,11 +282,11 @@ class BaseClf2(nn.Module):
 
 
 class QANet(nn.Module):
-    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300) -> None:
+    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
         
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
@@ -315,11 +315,11 @@ class QANet(nn.Module):
 
 
 class QANetV2(nn.Module):
-    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300) -> None:
+    def __init__(self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
         
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
@@ -363,12 +363,12 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    model = QANetV2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=False)
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=False)
+    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
