@@ -31,6 +31,8 @@ class InputEmbedding(nn.Module):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
         glove = GloVe(name="6B", dim=dimGlove)
+        self.wordPadIdx = glove.stoi["pad"]
+        self.charPadIdx = numChar - 1
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
@@ -136,10 +138,20 @@ class EmbeddingEncoder(nn.Module):
             batch_first=True,
             dropout=0.
         )
+        self.nHeads = nHeads
 
-    def forward(self, x):
+    def forward(self, x, mask_idx=None):
         x = self.conv(x)
-        x = self.transformerBlock(x)
+        sent_length = x.size(1)
+        if mask_idx is not None:
+            mask = torch.logical_or(mask_idx.unsqueeze(-1).expand(-1, -1, sent_length), mask_idx.unsqueeze(1).expand(-1, sent_length, -1))
+            mask = mask.unsqueeze(1).expand(-1, self.nHeads, -1, -1).reshape((mask.size(0) * self.nHeads, sent_length, sent_length))
+        else:
+            mask = None
+        import pdb; pdb.set_trace()
+        x = self.transformerBlock(x, mask)
+        if mask_idx is not None:
+            x = torch.nan_to_num(x)
         return x
 
 
@@ -148,12 +160,13 @@ class ContextQueryAttn(nn.Module):
         super().__init__()
         self.w0 = nn.Linear(in_features=dim * 3, out_features=1, bias=False)
 
-    def forward(self, context, query):
+    def forward(self, context, query, context_mask=None, query_mask=None):
         # context shape: [B, sent_length(400), 1, dim], query shape: [B, 1, sent_length(40), dim]
         contextSentLen, querySentLen = context.size(1), query.size(1)
         context = context.unsqueeze(2)
         query = query.unsqueeze(1)
         elemMul = context * query
+
         # simMat shape: [B, 400, 40, 3 * dim]
         simMat = torch.cat(
             [
@@ -164,9 +177,17 @@ class ContextQueryAttn(nn.Module):
             dim=-1,
         )
         # simMat shape: [B, 400, 40]
-        simMat = self.w0(simMat)
-        S = F.softmax(simMat, dim=-1).squeeze(-1)
-        SS = F.softmax(simMat, dim=1).squeeze(-1)
+        simMat = self.w0(simMat).squeeze(-1)
+        if context_mask is not None and query_mask is not None:
+            mask = torch.logical_or(context_mask.unsqueeze(-1).expand(-1, -1, querySentLen), query_mask.unsqueeze(1).expand(-1, contextSentLen, -1))
+            simMat = simMat.masked_fill(mask, -1e30)
+            
+        S = F.softmax(simMat, dim=-1)
+        SS = F.softmax(simMat, dim=1)
+        if context_mask is not None and query_mask is not None:
+            S = torch.nan_to_num(S)
+            SS = torch.nan_to_num(SS)
+        SS = torch.nan_to_num(SS)
         # out shape: [B, 400, dim]
         A = S @ query.squeeze(1)
         B = S @ SS.permute(0, 2, 1) @ context.squeeze(2)
@@ -197,12 +218,18 @@ class ModelEncoder(nn.Module):
         self.blocks = nn.Sequential(*blocks)
         self.linear = nn.Linear(embedDim * 4, embedDim, bias=False)
 
-    def forward(self, C, A, B):
+    def forward(self, C, A, B, mask_idx=None):
         concat = torch.cat([C, A, C * A, C * B], dim=-1)
         concat = self.linear(concat)
-        M0 = self.blocks(concat)
-        M1 = self.blocks(M0)
-        M2 = self.blocks(M1)
+        M0 = concat 
+        for block in self.blocks:
+            M0 = block(M0, mask_idx)
+        M1 = M0
+        for block in self.blocks:
+            M1 = block(M1, mask_idx)
+        M2 = M1 
+        for block in self.blocks:
+            M2 = block(M2, mask_idx)
         return [M0, M1, M2]
 
 class ModelEncoderV2(nn.Module):
@@ -288,7 +315,6 @@ class QANet(nn.Module):
         self.input_emb = InputEmbedding(
             numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
         )
-        
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
         self.context_query_attn = ContextQueryAttn(dim=dim)
         self.model_enc = ModelEncoder(embedDim=dim)
@@ -298,15 +324,23 @@ class QANet(nn.Module):
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
-        emb_q = self.embed_enc(self.input_emb(q))
-        emb_c = self.embed_enc(self.input_emb(c))
-        A, B = self.context_query_attn(emb_c, emb_q)
-        outputs = self.model_enc(emb_c, A, B)
+        c_word_idx = c["wordIdx"]
+        q_word_idx = q["wordIdx"]
+        word_pad_idx = self.input_emb.wordPadIdx
+        c_word_mask = c_word_idx == word_pad_idx 
+        q_word_mask = q_word_idx == word_pad_idx 
+        # c_word_mask, q_word_mask = None, None
+        emb_q = self.embed_enc(self.input_emb(q), q_word_mask)
+        emb_c = self.embed_enc(self.input_emb(c), c_word_mask)
+        A, B = self.context_query_attn(emb_c, emb_q, c_word_mask, q_word_mask)
+        outputs = self.model_enc(emb_c, A, B, c_word_mask)
         emb_st = torch.cat((outputs[0], outputs[1]), dim=-1)
         emb_en = torch.cat((outputs[0], outputs[2]), dim=-1)
-        pred_start = self.start_linear(emb_st) 
-        pred_end = self.end_linear(emb_en)
-        return pred_start.squeeze(), pred_end.squeeze()
+        pred_start = self.start_linear(emb_st).squeeze().masked_fill(c_word_mask, -1e30)
+        pred_end = self.end_linear(emb_en).squeeze().masked_fill(c_word_mask, -1e30)
+        # pred_start = self.start_linear(emb_st).squeeze()
+        # pred_end = self.end_linear(emb_en).squeeze()
+        return pred_start, pred_end
     
     def count_params(self):
         params = filter(lambda x: x.requires_grad, self.parameters())
@@ -362,13 +396,13 @@ if __name__ == "__main__":
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300, freeze=True)
+    device = torch.device("cpu")
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=20, dimGlove=50, freeze=True)
     # model = BaseClf2(numChar=squadTrain.charSetSize, dimChar=200, dimGlove=300)
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=2, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
