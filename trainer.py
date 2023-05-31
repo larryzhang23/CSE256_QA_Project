@@ -1,3 +1,4 @@
+import math
 import torch
 from dataset import SQuADQANet
 
@@ -11,7 +12,7 @@ def get_accuracy(pred_start, target_start, pred_end, target_end):
     return acc
 
 
-def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, device):
+def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device):
     avg_acc, avg_loss = 0, 0
     model.train()
     for it, (contextDict, questionDict, target) in enumerate(trainLoader):
@@ -37,14 +38,19 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, device):
         acc = get_accuracy(pred_start, target_start, pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
-        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}")
+        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}%")
+        lr_scheduler.step()
     avg_acc /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
-    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg acc: {(avg_acc * 100):.2f}")
+    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg acc: {(avg_acc * 100):.2f}% --lr {lr_scheduler.get_last_lr()}")
     return {"avg_loss": avg_loss, "avg_acc": avg_acc}
 
-def trainer(epochs, trainLoader, model, lossFunc, optimizer, device):
+def trainer(epochs, trainLoader, model, lossFunc, optimizer, lr_scheduler, device):
     for epoch in range(epochs):
-        stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, device)
-    
+        stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler,device)
+
+def lr_scheduler_func(warm_up_iters=1000):
+    maxVal = 1 / math.log(warm_up_iters)
+    func = lambda iters: maxVal * math.log(iters + 1) if iters < warm_up_iters else 1.0
+    return func
