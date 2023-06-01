@@ -45,14 +45,26 @@ class SQuADQANet(SQuADBase, Dataset):
 
     Args:
         split(str): train or validation
+        questionMaxLen(int): max length of the question
         contextMaxLen(int): max length of the context
+        version(str): dataset version (v1 or v2)
+        glove_version: glove embedding version
+        glove_dim: glove embedding dimension
     """
 
-    def __init__(self, split: str, questionMaxLen: int = 40, version: str = "v1", glove_version: str = "6B", glove_dim=300):
+    def __init__(
+            self, 
+            split: str, 
+            questionMaxLen: int = 40, 
+            contextMaxLen: int = 400, 
+            version: str = "v1", 
+            glove_version: str = "6B", 
+            glove_dim=300
+        ):
         super().__init__(version, split)
         print("Preparing Dataset...")
         self.legalDataIdx = []
-        self.contextMaxLen = 400 if version == "v1" else 401
+        self.contextMaxLen = contextMaxLen
         for i, sample in enumerate(self.dataset):
             if len(sample["context"]) <= self.contextMaxLen:
                 self.legalDataIdx.append(i)
@@ -87,7 +99,7 @@ class SQuADQANet(SQuADBase, Dataset):
         else:
             # for unanswerable questions, set startIdx = 400, endIdx = 400
             item["answers"]["text"] = ""
-            item["answers"]["index"] = (self.contextMaxLen - 1, self.contextMaxLen - 1)
+            item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
             item["answers"].pop("answer_start")
         return item
 

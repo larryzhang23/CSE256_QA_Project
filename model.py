@@ -409,7 +409,7 @@ class MACQClf(nn.Module):
     
 
 class TFCQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, questionMaxLen=40, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, contextMaxLen=400, questionMaxLen=40, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
@@ -421,10 +421,8 @@ class TFCQClf(nn.Module):
         self.tf_layer = nn.TransformerEncoderLayer(dim, nhead=8, dim_feedforward=4*dim, batch_first=True, norm_first=True)
         if version == "v1":
             output_dim = 400
-            contextMaxLen = 400
         else:
             output_dim = 401
-            contextMaxLen = 401
         self.conv = nn.Conv1d(contextMaxLen + questionMaxLen, 1, kernel_size=1, bias=False)
         self.start_linear = nn.Linear(dim, output_dim)
         self.end_linear = nn.Linear(dim, output_dim)
@@ -601,7 +599,7 @@ if __name__ == "__main__":
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=32, shuffle=True)
+    trainLoader = DataLoader(subsetTrain, batch_size=2, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),

@@ -45,6 +45,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         if ema is not None:
             ema(model, total_steps)
         total_steps += 1
+        import pdb; pdb.set_trace()
 
 
     avg_acc /= len(trainLoader)
