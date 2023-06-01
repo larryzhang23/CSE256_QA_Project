@@ -245,13 +245,17 @@ class ModelEncoderV2(nn.Module):
 
 
 class InputEmbedClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50) -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(numChar=numChar, dimChar=dimChar, dimGlove=dimGlove)
         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(2 * (dimChar + dimGlove), 400)
-        self.end_linear = nn.Linear(2 * (dimChar + dimGlove), 400)
+        if version == "v1":
+            output_dim = 400
+        else:
+            output_dim = 401
+        self.start_linear = nn.Linear(2 * (dimChar + dimGlove), output_dim)
+        self.end_linear = nn.Linear(2 * (dimChar + dimGlove), output_dim)
 
     def forward(self, q, c):
         # [B, glove_dim + char_dim]
@@ -269,7 +273,7 @@ class InputEmbedClf(nn.Module):
 
 
 class EmbedEncClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
@@ -278,8 +282,12 @@ class EmbedEncClf(nn.Module):
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
         # [B, sent_length, 400]
-        self.start_linear = nn.Linear(2 * dim, 400)
-        self.end_linear = nn.Linear(2 * dim, 400)
+        if version == "v1":
+            output_dim = 400
+        else:
+            output_dim = 401
+        self.start_linear = nn.Linear(2 * dim, output_dim)
+        self.end_linear = nn.Linear(2 * dim, output_dim)
         self.with_mask = with_mask
 
     def forward(self, c, q):
@@ -308,7 +316,7 @@ class EmbedEncClf(nn.Module):
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 class CQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
@@ -350,7 +358,7 @@ class CQClf(nn.Module):
 
 
 class MACQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, questionMaxLen=40, with_mask=False, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
@@ -362,9 +370,13 @@ class MACQClf(nn.Module):
         # self.lnorm1 = nn.LayerNorm(dim)
         # self.lnorm2 = nn.LayerNorm(dim)
         self.att = nn.MultiheadAttention(embed_dim=dim, num_heads=8, batch_first=True)
-        self.conv = nn.Conv1d(40, 1, kernel_size=1, bias=False)
-        self.start_linear = nn.Linear(dim, 400)
-        self.end_linear = nn.Linear(dim, 400)
+        self.conv = nn.Conv1d(questionMaxLen, 1, kernel_size=1, bias=False)
+        if version == "v1":
+            output_dim = 400
+        else:
+            output_dim = 401
+        self.start_linear = nn.Linear(dim, output_dim)
+        self.end_linear = nn.Linear(dim, output_dim)
         self.with_mask = with_mask
 
     def forward(self, c, q):
@@ -397,7 +409,7 @@ class MACQClf(nn.Module):
     
 
 class TFCQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, contextMaxLen=400, questionMaxLen=40, version="v1") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
@@ -407,9 +419,13 @@ class TFCQClf(nn.Module):
         self.embed_enc = EmbeddingEncoder(dim)
         # [B, sent_length, 128]
         self.tf_layer = nn.TransformerEncoderLayer(dim, nhead=8, dim_feedforward=4*dim, batch_first=True, norm_first=True)
-        self.conv = nn.Conv1d(440, 1, kernel_size=1, bias=False)
-        self.start_linear = nn.Linear(dim, 400)
-        self.end_linear = nn.Linear(dim, 400)
+        self.conv = nn.Conv1d(contextMaxLen + questionMaxLen, 1, kernel_size=1, bias=False)
+        if version == "v1":
+            output_dim = 400
+        else:
+            output_dim = 401
+        self.start_linear = nn.Linear(dim, output_dim)
+        self.end_linear = nn.Linear(dim, output_dim)
         self.with_mask = with_mask
 
     def forward(self, c, q):
@@ -556,14 +572,14 @@ if __name__ == "__main__":
     from dataset import SQuADQANet
     from trainer import trainer, lr_scheduler_func
 
-    datasetVersion = "v1"
+    datasetVersion = "v2"
     glove_dim = 50
     char_dim = 20
     dim = 128
     glove_version = "6B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
-    # subsetTrain = squadTrain
-    subsetTrain = Subset(squadTrain, [i for i in range(4096)])
+    subsetTrain = squadTrain
+    # subsetTrain = Subset(squadTrain, [i for i in range(4096)])
     # import pdb
 
     # pdb.set_trace()
@@ -574,10 +590,10 @@ if __name__ == "__main__":
     
     # model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True)
     # model = InputEmbedClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim)
-    # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
+    # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
     # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
-    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
+    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion)
     
     
     print(f"Model parameters: {model.count_params()}")
@@ -610,4 +626,4 @@ if __name__ == "__main__":
     #         model(contextDict, questionDict)
     #         quit()
 
-    trainer(200, trainLoader, model, criterion, optimizer, lr_scheduler, device, ema)
+    trainer(30, trainLoader, model, criterion, optimizer, lr_scheduler, device, ema)

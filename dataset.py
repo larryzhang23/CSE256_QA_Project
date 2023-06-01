@@ -52,7 +52,8 @@ class SQuADQANet(SQuADBase, Dataset):
         super().__init__(version, split)
         print("Preparing Dataset...")
         self.legalDataIdx = []
-        self.contextMaxLen = 400 if version == "v1" else 401
+        # self.contextMaxLen = 400 if version == "v1" else 401
+        self.contextMaxLen = 400
         for i, sample in enumerate(self.dataset):
             if len(sample["context"]) <= self.contextMaxLen:
                 self.legalDataIdx.append(i)
