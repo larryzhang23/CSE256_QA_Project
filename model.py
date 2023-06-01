@@ -131,16 +131,8 @@ class EmbeddingEncoder(nn.Module):
 
     def forward(self, x, mask_idx=None):
         x = self.conv(x)
-        sent_length = x.size(1)
-        if mask_idx is not None:
-            mask = torch.logical_or(mask_idx.unsqueeze(-1).expand(-1, -1, sent_length), mask_idx.unsqueeze(1).expand(-1, sent_length, -1))
-            mask = mask.unsqueeze(1).expand(-1, self.nHeads, -1, -1).reshape((mask.size(0) * self.nHeads, sent_length, sent_length))
-        else:
-            mask = None
         # import pdb; pdb.set_trace()
-        x = self.transformerBlock(x, mask)
-        if mask_idx is not None:
-            x = torch.nan_to_num(x)
+        x = self.transformerBlock(x, src_key_padding_mask=mask_idx)
         return x
 
 
@@ -356,6 +348,98 @@ class CQClf(nn.Module):
         num_params = sum(param.numel() for param in params)
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
+
+class MACQClf(nn.Module):
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+        super().__init__()
+        # [B, sent_length, glove_dim + char_dim]
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+        )
+        self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
+        self.embed_enc = EmbeddingEncoder(dim)
+        # [B, sent_length, 128]
+        # self.lnorm1 = nn.LayerNorm(dim)
+        # self.lnorm2 = nn.LayerNorm(dim)
+        self.att = nn.MultiheadAttention(embed_dim=dim, num_heads=8, batch_first=True)
+        self.conv = nn.Conv1d(40, 1, kernel_size=1, bias=False)
+        self.start_linear = nn.Linear(dim, 400)
+        self.end_linear = nn.Linear(dim, 400)
+        self.with_mask = with_mask
+
+    def forward(self, c, q):
+        # [B, glove_dim + char_dim]
+        emb_q = self.map(self.input_emb(q).permute(0, 2, 1)).permute(0, 2, 1)
+        emb_c = self.map(self.input_emb(c).permute(0, 2, 1)).permute(0, 2, 1)
+        if self.with_mask:
+            c_word_idx = c["wordIdx"]
+            q_word_idx = q["wordIdx"]
+            word_pad_idx = self.input_emb.wordPadIdx
+            c_word_mask = c_word_idx == word_pad_idx 
+            q_word_mask = q_word_idx == word_pad_idx 
+        else:
+            c_word_mask = None
+            q_word_mask = None
+        emb_c = self.embed_enc(emb_c, c_word_mask)
+        emb_q = self.embed_enc(emb_q, q_word_mask)
+        # emb_c = self.lnorm1(emb_c)
+        # emb_q = self.lnorm2(emb_q)
+        emb = self.att(emb_q, emb_c, emb_c, key_padding_mask=c_word_mask)[0]
+        emb = self.conv(emb).squeeze(1)
+        # emb_B = self.att(emb_c, emb_q, emb_q)[0]
+        # emb = self.linear(emb)
+        return self.start_linear(emb).squeeze(), self.end_linear(emb).squeeze()
+
+    def count_params(self):
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
+    
+
+class TFCQClf(nn.Module):
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False) -> None:
+        super().__init__()
+        # [B, sent_length, glove_dim + char_dim]
+        self.input_emb = InputEmbedding(
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+        )
+        self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
+        self.embed_enc = EmbeddingEncoder(dim)
+        # [B, sent_length, 128]
+        self.tf_layer = nn.TransformerEncoderLayer(dim, nhead=8, dim_feedforward=4*dim, batch_first=True, norm_first=True)
+        self.conv = nn.Conv1d(440, 1, kernel_size=1, bias=False)
+        self.start_linear = nn.Linear(dim, 400)
+        self.end_linear = nn.Linear(dim, 400)
+        self.with_mask = with_mask
+
+    def forward(self, c, q):
+        # [B, glove_dim + char_dim]
+        emb_q = self.map(self.input_emb(q).permute(0, 2, 1)).permute(0, 2, 1)
+        emb_c = self.map(self.input_emb(c).permute(0, 2, 1)).permute(0, 2, 1)
+        if self.with_mask:
+            c_word_idx = c["wordIdx"]
+            q_word_idx = q["wordIdx"]
+            word_pad_idx = self.input_emb.wordPadIdx
+            c_word_mask = c_word_idx == word_pad_idx 
+            q_word_mask = q_word_idx == word_pad_idx 
+            tf_word_mask = torch.cat((c_word_mask, q_word_mask), dim=1)
+        else:
+            c_word_mask = None
+            q_word_mask = None
+            tf_word_mask = None
+        emb_c = self.embed_enc(emb_c, c_word_mask)
+        emb_q = self.embed_enc(emb_q, q_word_mask)
+        emb = torch.cat((emb_c, emb_q), dim=1)
+        emb = self.tf_layer(emb, src_key_padding_mask=tf_word_mask)
+        emb = self.conv(emb).squeeze(1)
+        
+        return self.start_linear(emb).squeeze(), self.end_linear(emb).squeeze()
+
+    def count_params(self):
+        params = filter(lambda x: x.requires_grad, self.parameters())
+        num_params = sum(param.numel() for param in params)
+        return f"Trainable Params: {(num_params / 1e6):.2f}M"
+
 class QANet(nn.Module):
     def __init__(
         self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
@@ -479,7 +563,7 @@ if __name__ == "__main__":
     glove_version = "6B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     # subsetTrain = squadTrain
-    subsetTrain = Subset(squadTrain, [i for i in range(1024)])
+    subsetTrain = Subset(squadTrain, [i for i in range(4096)])
     # import pdb
 
     # pdb.set_trace()
@@ -490,8 +574,11 @@ if __name__ == "__main__":
     
     # model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True)
     # model = InputEmbedClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim)
-    # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
-    model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
+    # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
+    # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
+    # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
+    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
+    
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
@@ -511,10 +598,10 @@ if __name__ == "__main__":
     #     if param.requires_grad:
     #         ema.register(name, param.data)
     
-    lr_scheduler = None
-    # warm_up_iters = 1000
-    # lr_func = lr_scheduler_func(warm_up_iters=warm_up_iters)
-    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
+    # lr_scheduler = None
+    warm_up_iters = 1000
+    lr_func = lr_scheduler_func(warm_up_iters=warm_up_iters)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
     criterion = nn.CrossEntropyLoss()
 
     # for epoch in range(2):
