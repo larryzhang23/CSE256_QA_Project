@@ -37,8 +37,10 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         acc = get_accuracy(pred_start, target_start, pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
-        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}% --lr {lr_scheduler.get_last_lr()}")
-        lr_scheduler.step()
+        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}% --lr {lr_scheduler.get_last_lr() if lr_scheduler is not None else None}")
+
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
         if ema is not None:
             ema(model, total_steps)
