@@ -66,7 +66,7 @@ class SQuADQANet(SQuADBase, Dataset):
         self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
         for i, sample in enumerate(self.dataset):
-            if len(sample["context"]) <= self.contextMaxLen:
+            if split == "validation" or len(sample["context"]) <= self.contextMaxLen:
                 self.legalDataIdx.append(i)
         self.contextMaxLen = self.contextMaxLen
         self.questionMaxLen = questionMaxLen
@@ -89,18 +89,32 @@ class SQuADQANet(SQuADBase, Dataset):
         raise StopIteration
 
     def _helper(self, item):
-        # only support training format for now
-        if item["answers"]["answer_start"]:
-            startIdx = item["answers"]["answer_start"][0]
-            text = item["answers"]["text"][0]
-            item["answers"]["text"] = text
-            item["answers"]["index"] = (startIdx, startIdx + len(text) - 1)
-            item["answers"].pop("answer_start")
+        if self.split == "train":
+            if item["answers"]["answer_start"]:
+                startIdx = item["answers"]["answer_start"][0]
+                text = item["answers"]["text"][0]
+                item["answers"]["text"] = text
+                item["answers"]["index"] = (startIdx, startIdx + len(text) - 1)
+                item["answers"].pop("answer_start")
+            else:
+                # for unanswerable questions, set startIdx = 400, endIdx = 400
+                item["answers"]["text"] = ""
+                item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
+                item["answers"].pop("answer_start")
         else:
-            # for unanswerable questions, set startIdx = 400, endIdx = 400
-            item["answers"]["text"] = ""
-            item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
-            item["answers"].pop("answer_start")
+            if item["answers"]["answer_start"]:
+                answer_lst = []
+                for text, start_idx in zip(item["answers"]["text"], item["answers"]["answer_start"]):
+                    end_idx = start_idx + len(text) - 1
+                    answer_lst.append((start_idx, end_idx))
+                if len(answer_lst) < 6:
+                    answer_lst.extend([answer_lst[-1] for _ in range(6 - len(answer_lst))])
+                item["answers"]["index"] = answer_lst
+                item["answers"].pop("answer_start")
+            else:
+                item["answers"]["index"] = [(self.contextMaxLen, self.contextMaxLen) for _ in range(6)]
+                item["answers"].pop("answer_start")
+            
         return item
 
     def _get_embedding_idx(self, sent, word_length=16, sent_length=400):

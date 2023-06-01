@@ -531,7 +531,7 @@ class QANetV2(nn.Module):
         num_params = sum(param.numel() for param in params)
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
-
+# reference: https://github.com/BangLiu/QANet-PyTorch/blob/0ce11ca1494c6c30d61c0bf2b78907fe27369962/model/modules/ema.py
 class EMA():
 
     def __init__(self, mu):
@@ -572,17 +572,21 @@ if __name__ == "__main__":
     from dataset import SQuADQANet
     from trainer import trainer, lr_scheduler_func
 
-    datasetVersion = "v2"
-    glove_dim = 50
-    char_dim = 20
+    datasetVersion = "v1"
+    glove_dim = 300
+    char_dim = 200
     dim = 128
+    batch_size = 32
     glove_version = "6B"
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
+    squadVal = SQuADQANet("validation", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     subsetTrain = squadTrain
-    # subsetTrain = Subset(squadTrain, [i for i in range(4096)])
-    # import pdb
-
-    # pdb.set_trace()
+    subsetVal = squadVal
+    # subsetTrain = Subset(squadTrain, [i for i in range(32)])
+    # subsetVal = Subset(squadVal, [i for i in range(32)])
+    trainLoader = DataLoader(subsetTrain, batch_size=batch_size, shuffle=True)
+    valLoader = DataLoader(subsetVal, batch_size=batch_size, shuffle=False)
+  
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
     else:
@@ -595,11 +599,9 @@ if __name__ == "__main__":
     # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
     model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion)
     
-    
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
 
-    trainLoader = DataLoader(subsetTrain, batch_size=2, shuffle=True)
     optimizer = optim.Adam(
         model.parameters(),
         betas=(0.8, 0.999),
@@ -620,10 +622,4 @@ if __name__ == "__main__":
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
     criterion = nn.CrossEntropyLoss()
 
-    # for epoch in range(2):
-    #     for i, (contextDict, questionDict, label) in enumerate(trainLoader):
-    #         print(epoch, i)
-    #         model(contextDict, questionDict)
-    #         quit()
-
-    trainer(30, trainLoader, model, criterion, optimizer, lr_scheduler, device, ema)
+    trainer(30, trainLoader, valLoader, model, criterion, optimizer, lr_scheduler, device, ema)

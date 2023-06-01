@@ -1,19 +1,10 @@
 import math
 import torch
 from dataset import SQuADQANet
-
-def get_accuracy(pred_start, target_start, pred_end, target_end):
-    pred_start_idx = torch.argmax(pred_start.detach(), dim=1)
-    pred_end_idx = torch.argmax(pred_end.detach(), dim=1)
-    correct_start = pred_start_idx == target_start
-    correct_end = pred_end_idx == target_end
-    correct = torch.logical_and(correct_start, correct_end)
-    acc = torch.sum(correct).item() / len(pred_start_idx)
-    return acc
-
+from eval import get_em, get_em_max, get_f1_score, get_f1_score_max
 
 def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
-    avg_acc, avg_loss = 0, 0
+    avg_acc, avg_f1, avg_loss = 0, 0, 0
     model.train()
 
     total_steps = epoch * len(trainLoader)
@@ -34,10 +25,13 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
         optimizer.step()
-        acc = get_accuracy(pred_start, target_start, pred_end, target_end)
+        acc = get_em(pred_start, target_start, pred_end, target_end)
+        f1 = get_f1_score(pred_start, target_start, pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
-        print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- acc: {(acc * 100):.2f}% --lr {lr_scheduler.get_last_lr() if lr_scheduler is not None else None}")
+        avg_f1 += f1
+        if it > 0 and it % 20 == 0:
+            print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else None):.4f}")
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -45,13 +39,12 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         if ema is not None:
             ema(model, total_steps)
         total_steps += 1
-        import pdb; pdb.set_trace()
-
 
     avg_acc /= len(trainLoader)
+    avg_f1 /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
-    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg acc: {(avg_acc * 100):.2f}%")
+    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg EM acc: {(avg_acc * 100):.2f}% -- avg F1 score: {avg_f1:.3f}")
 
     ### debug ###
     if epoch > 0 and epoch % 5 == 0:
@@ -71,11 +64,35 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
             if it >= 0:
                 break
                 
-    return {"avg_loss": avg_loss, "avg_acc": avg_acc}
+    return {"avg_loss": avg_loss, "avg_acc": avg_acc, "f1_score": avg_f1}
 
-def trainer(epochs, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
+def validate(epoch, valLoader, model, device, ema=None):
+    avg_acc, avg_f1 = 0, 0
+    model.eval()
+    print(f"======== Begin Validation at Epoch {epoch} ===========")
+    with torch.no_grad():
+        for it, (contextDict, questionDict, targets) in enumerate(valLoader):
+            contextDict["wordIdx"] = contextDict["wordIdx"].to(device, non_blocking=True)
+            contextDict["charIdx"] = contextDict["charIdx"].to(device, non_blocking=True)
+            questionDict["wordIdx"] = questionDict["wordIdx"].to(device, non_blocking=True)
+            questionDict["charIdx"] = questionDict["charIdx"].to(device, non_blocking=True)
+
+            pred_start, pred_end = model(contextDict, questionDict)
+            acc = get_em_max(pred_start, pred_end, targets)
+            f1 = get_f1_score_max(pred_start, pred_end, targets)
+            avg_acc += acc
+            avg_f1 += f1
+            # print(f"[Epoch:{epoch}/{it}] --acc: {(acc * 100):.2f}% --f1 score: {f1:.3f}")
+
+    avg_acc /= len(valLoader)
+    avg_f1 /= len(valLoader)
+    print(f"[Epoch:{epoch}] -- avg EM acc: {(avg_acc * 100):.2f}% -- avg F1 score: {avg_f1:.3f}")
+    return {"avg_acc": avg_acc, "f1_score": avg_f1}
+
+def trainer(epochs, trainLoader, valLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     for epoch in range(epochs):
-        stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
+        train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
+        val_stats = validate(epoch, valLoader, model, device)
 
 def lr_scheduler_func(warm_up_iters=1000):
     maxVal = 1 / math.log(warm_up_iters)
