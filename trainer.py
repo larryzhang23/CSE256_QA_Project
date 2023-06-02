@@ -46,7 +46,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
     avg_f1 /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
-    print(f"[Epoch:{epoch}] -- avg loss: {avg_loss:.4f} -- avg EM acc: {(avg_acc * 100):.2f}% -- avg F1 score: {avg_f1:.3f}")
+    print(f"[Epoch:{epoch}] -- Train avg loss: {avg_loss:.4f} -- Train avg EM acc: {(avg_acc * 100):.2f}% -- Train avg F1 score: {avg_f1:.3f}")
 
     ### debug ###
     if epoch > 0 and epoch % 5 == 0:
@@ -100,7 +100,7 @@ def validate(epoch, valLoader, model, device, ema=None):
 
     avg_acc /= len(valLoader)
     avg_f1 /= len(valLoader)
-    print(f"[Epoch:{epoch}] -- avg EM acc: {(avg_acc * 100):.2f}% -- avg F1 score: {avg_f1:.3f}")
+    print(f"[Epoch:{epoch}] -- Val avg EM acc: {(avg_acc * 100):.2f}% -- Val avg F1 score: {avg_f1:.3f}")
     val_dict = {"val_avg_em_acc": avg_acc, "val_avg_f1_score": avg_f1}
     wandb.log(val_dict)
     return val_dict
