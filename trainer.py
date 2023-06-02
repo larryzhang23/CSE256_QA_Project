@@ -72,6 +72,7 @@ def validate(epoch, valLoader, model, device, ema=None):
     print(f"======== Begin Validation at Epoch {epoch} ===========")
     with torch.no_grad():
         for it, (contextDict, questionDict, targets) in enumerate(valLoader):
+            targets.to(device, non_blocking=True)
             contextDict["wordIdx"] = contextDict["wordIdx"].to(device, non_blocking=True)
             contextDict["charIdx"] = contextDict["charIdx"].to(device, non_blocking=True)
             questionDict["wordIdx"] = questionDict["wordIdx"].to(device, non_blocking=True)
