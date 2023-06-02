@@ -62,7 +62,7 @@ def main():
 
     with wandb.init(
         project="qanet",
-        name="tfnet",
+        name="tfnet-42B-v1dataset",
         notes="Implementation of qanet",
         config={
             "dataset_version": datasetVersion,
