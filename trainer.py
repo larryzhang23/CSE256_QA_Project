@@ -31,7 +31,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         avg_acc += acc
         avg_f1 += f1
         lr = get_lr(optimizer)
-        wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "f1": f1, "lr": lr})
+        wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "train_f1_score": f1, "lr": lr})
         if it > 0 and it % 20 == 0:
             print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {lr:.4f}")
 
@@ -87,6 +87,16 @@ def validate(epoch, valLoader, model, device, ema=None):
             avg_acc += acc
             avg_f1 += f1
             # print(f"[Epoch:{epoch}/{it}] --acc: {(acc * 100):.2f}% --f1 score: {f1:.3f}")
+
+            ## debug
+            if it == 0:
+                pred_start = torch.argmax(pred_start, dim=1)
+                pred_end = torch.argmax(pred_end, dim=1)
+                pred_start = pred_start.cpu().numpy().tolist()
+                pred_end = pred_end.cpu().numpy().tolist()
+                print("pred: ", list(zip(pred_start, pred_end)))
+                print("target: ", targets.numpy().tolist())
+            
 
     avg_acc /= len(valLoader)
     avg_f1 /= len(valLoader)
