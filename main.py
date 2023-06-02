@@ -35,7 +35,7 @@ def main():
     # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
     # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
-    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion)
+    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version)
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)

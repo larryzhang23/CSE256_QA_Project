@@ -27,10 +27,10 @@ class HighwayNetwork(nn.Module):
 
 
 class InputEmbedding(nn.Module):
-    def __init__(self, numChar, dimChar=200, dimGlove=300, freeze=True):
+    def __init__(self, numChar, dimChar=200, dimGlove=300, gloveVersion="6B", freeze=True):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
-        glove = GloVe(name="6B", dim=dimGlove)
+        glove = GloVe(name=gloveVersion, dim=dimGlove)
         self.wordPadIdx = glove.stoi["pad"]
         self.charPadIdx = numChar - 1
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
@@ -245,10 +245,10 @@ class ModelEncoderV2(nn.Module):
 
 
 class InputEmbedClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, version="v1", gloveVersion="6B") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
-        self.input_emb = InputEmbedding(numChar=numChar, dimChar=dimChar, dimGlove=dimGlove)
+        self.input_emb = InputEmbedding(numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion)
         # [B, sent_length, 400]
         if version == "v1":
             output_dim = 400
@@ -273,11 +273,11 @@ class InputEmbedClf(nn.Module):
 
 
 class EmbedEncClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1", gloveVersion="6B") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
@@ -316,11 +316,11 @@ class EmbedEncClf(nn.Module):
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
 
 class CQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, version="v1", gloveVersion="6B") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
@@ -358,11 +358,11 @@ class CQClf(nn.Module):
 
 
 class MACQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, questionMaxLen=40, with_mask=False, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, questionMaxLen=40, with_mask=False, version="v1", gloveVersion="6B") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
@@ -409,11 +409,11 @@ class MACQClf(nn.Module):
     
 
 class TFCQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, contextMaxLen=400, questionMaxLen=40, version="v1") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, contextMaxLen=400, questionMaxLen=40, version="v1", gloveVersion="6B") -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
@@ -458,12 +458,12 @@ class TFCQClf(nn.Module):
 
 class QANet(nn.Module):
     def __init__(
-        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True, gloveVersion="6B"
     ) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze, gloveVersion=gloveVersion
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(embedDim=dim)
@@ -501,12 +501,12 @@ class QANet(nn.Module):
 
 class QANetV2(nn.Module):
     def __init__(
-        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True, gloveVersion="6B"
     ) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze, gloveVersion=gloveVersion
         )
 
         self.embed_enc = EmbeddingEncoder(dimChar + dimGlove)
