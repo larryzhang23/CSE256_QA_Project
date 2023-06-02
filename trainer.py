@@ -95,7 +95,7 @@ def validate(epoch, valLoader, model, device, ema=None):
                 pred_start = pred_start.cpu().numpy().tolist()
                 pred_end = pred_end.cpu().numpy().tolist()
                 print("pred: ", list(zip(pred_start, pred_end)))
-                print("target: ", targets.numpy().tolist())
+                print("target: ", targets.cpu().numpy().tolist())
             
 
     avg_acc /= len(valLoader)
