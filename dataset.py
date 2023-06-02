@@ -66,7 +66,7 @@ class SQuADQANet(SQuADBase, Dataset):
         self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
         for i, sample in enumerate(self.dataset):
-            if split == "validation" or len(sample["context"]) <= self.contextMaxLen:
+            if len(sample["context"]) <= self.contextMaxLen:
                 self.legalDataIdx.append(i)
         self.contextMaxLen = self.contextMaxLen
         self.questionMaxLen = questionMaxLen
