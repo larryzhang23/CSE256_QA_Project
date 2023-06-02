@@ -76,4 +76,6 @@ def main():
     )
     trainer(30, trainLoader, valLoader, model, criterion, optimizer, lr_scheduler, device, ema, log)
 
-    
+
+if __name__ == "__main__":
+    main()
