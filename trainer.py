@@ -1,6 +1,6 @@
 import math
 import torch
-from dataset import SQuADQANet
+import wandb
 from eval import get_em, get_em_max, get_f1_score, get_f1_score_max
 
 def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
@@ -30,6 +30,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         avg_loss += loss.item()
         avg_acc += acc
         avg_f1 += f1
+        wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "f1": f1})
         if it > 0 and it % 20 == 0:
             print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else None):.4f}")
 
@@ -64,7 +65,8 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
             if it >= 0:
                 break
                 
-    return {"avg_loss": avg_loss, "avg_acc": avg_acc, "f1_score": avg_f1}
+    train_dict = {"train_avg_loss": avg_loss, "train_avg_em_acc": avg_acc, "train_avg_f1_score": avg_f1}
+    return train_dict
 
 def validate(epoch, valLoader, model, device, ema=None):
     avg_acc, avg_f1 = 0, 0
@@ -88,12 +90,15 @@ def validate(epoch, valLoader, model, device, ema=None):
     avg_acc /= len(valLoader)
     avg_f1 /= len(valLoader)
     print(f"[Epoch:{epoch}] -- avg EM acc: {(avg_acc * 100):.2f}% -- avg F1 score: {avg_f1:.3f}")
-    return {"avg_acc": avg_acc, "f1_score": avg_f1}
+    val_dict = {"val_avg_em_acc": avg_acc, "val_avg_f1_score": avg_f1}
+    wandb.log(val_dict)
+    return val_dict
 
 def trainer(epochs, trainLoader, valLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     for epoch in range(epochs):
         train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
         val_stats = validate(epoch, valLoader, model, device)
+        
 
 def lr_scheduler_func(warm_up_iters=1000):
     maxVal = 1 / math.log(warm_up_iters)
