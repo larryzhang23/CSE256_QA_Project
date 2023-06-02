@@ -60,8 +60,9 @@ def main():
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_func)
     criterion = nn.CrossEntropyLoss()
 
-    run = wandb.init(
+    with wandb.init(
         project="qanet",
+        name="tfnet",
         notes="Implementation of qanet",
         config={
             "dataset_version": datasetVersion,
@@ -72,9 +73,9 @@ def main():
             "batch_size": batch_size, 
             "warm_up_iters": warm_up_iters, 
             "base_lr": lr
-        }
-    )
-    trainer(30, trainLoader, valLoader, model, criterion, optimizer, lr_scheduler, device, ema)
+        } 
+    ) as run:
+        trainer(30, trainLoader, valLoader, model, criterion, optimizer, lr_scheduler, device, ema)
 
 
 if __name__ == "__main__":

@@ -30,9 +30,10 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         avg_loss += loss.item()
         avg_acc += acc
         avg_f1 += f1
-        wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "f1": f1})
+        lr = get_lr(optimizer)
+        wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "f1": f1, "lr": lr})
         if it > 0 and it % 20 == 0:
-            print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else None):.4f}")
+            print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {lr:.4f}")
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -104,3 +105,7 @@ def lr_scheduler_func(warm_up_iters=1000):
     maxVal = 1 / math.log(warm_up_iters)
     func = lambda iters: maxVal * math.log(iters + 1) if iters < warm_up_iters else 1.0
     return func
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
