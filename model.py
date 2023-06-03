@@ -27,7 +27,7 @@ class HighwayNetwork(nn.Module):
 
 
 class InputEmbedding(nn.Module):
-    def __init__(self, numChar, dimChar=200, dimGlove=300, gloveVersion="6B", freeze=True):
+    def __init__(self, numChar, dimChar=200, dimGlove=300, gloveVersion="6B", freeze=True, dropout=0.0):
         super().__init__()
         self.charEmbed = nn.Embedding(numChar, dimChar)
         glove = GloVe(name=gloveVersion, dim=dimGlove)
@@ -36,27 +36,32 @@ class InputEmbedding(nn.Module):
         self.gloveEmbed = nn.Embedding.from_pretrained(glove.vectors, freeze=freeze)
         self.conv = nn.Conv2d(dimChar, dimChar, (1, 5))
         self.hn = HighwayNetwork(dimChar + dimGlove)
+        self.dropout1 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.dropout2 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
     def forward(self, x):
         # wordIdxTensor shape: [B, sent_length], charIdxTensor shape: [B, sent_length, 16]
         wordIdxTensor, charIdxTensor = x["wordIdx"], x["charIdx"]
         # charEmbedding shape: [B, sent_length, 16, char_dim]
         charEmbed = self.charEmbed(charIdxTensor)
+        charEmbed = self.dropout1(charEmbed)
         charEmbed = F.relu(self.conv(charEmbed.permute(0, 3, 1, 2)))
         charEmbed, _ = torch.max(charEmbed, dim=-1)
         charEmbed = charEmbed.permute(0, 2, 1)  # new shape: [B,sent_length, char_ndim]
         # wordEmbedding shape: [B, sent_length, glove_dim]
         wordEmbed = self.gloveEmbed(wordIdxTensor)
+        wordEmbed = self.dropout1(wordEmbed)
         # import pdb; pdb.set_trace()
         catEmbed = torch.cat(
             (wordEmbed, charEmbed), dim=2
         )  # [B, sent_length, glove_dim + char_dim]
         catEmbed = self.hn(catEmbed)
+        catEmbed = self.dropout2(catEmbed)
         return catEmbed
 
 
 class DepthWiseConv1d(nn.Module):
-    def __init__(self, dim, kernel_size=7, use_pad=True):
+    def __init__(self, dim, kernel_size=7, use_pad=True, dropout=0.0):
         """
         args:
             dim(int): 128
@@ -74,12 +79,13 @@ class DepthWiseConv1d(nn.Module):
         self.pointwise = nn.Conv1d(dim, dim, kernel_size=1, bias=False)
         # self.dropout = nn.Dropout(p=0.1)
         self.layernorm = nn.LayerNorm(dim)
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
     def forward(self, x):
         # x shape: [B, sen_length, dim]
         x_res = x.permute(0, 2, 1)
         x = self.layernorm(x).permute(0, 2, 1)
-        x = F.relu(self.pointwise(F.relu(self.depth(x))))
+        x = self.dropout(F.relu(self.pointwise(F.relu(self.depth(x)))))
         return (x + x_res).permute(0, 2, 1)  # [B, sen_length, dim]
 
 
@@ -110,12 +116,13 @@ class EmbeddingEncoder(nn.Module):
         numConvLayers=4,
         nHeads=8,
         ker_size=7,
+        dropout=0.0
     ):
         super().__init__()
         # convolution part
         conv = []
         for _ in range(numConvLayers):
-            conv.append(DepthWiseConv1d(embedDim, kernel_size=ker_size))
+            conv.append(DepthWiseConv1d(embedDim, kernel_size=ker_size, dropout=dropout))
         self.conv = nn.Sequential(*conv)
 
         # transformer part
@@ -125,7 +132,7 @@ class EmbeddingEncoder(nn.Module):
             dim_feedforward=embedDim * 4,
             norm_first=True,
             batch_first=True,
-            dropout=0.0,
+            dropout=dropout,
         )
         self.nHeads = nHeads
 
@@ -182,6 +189,7 @@ class ModelEncoder(nn.Module):
         numConvLayers=2,
         nHeads=8,
         nBlocks=7,
+        dropout=0.0,
     ):
         super().__init__()
         self.embedDim = embedDim
@@ -193,6 +201,7 @@ class ModelEncoder(nn.Module):
                     numConvLayers=numConvLayers,
                     nHeads=nHeads,
                     ker_size=5,
+                    dropout=dropout
                 )
             )
         self.blocks = nn.Sequential(*blocks)
@@ -358,25 +367,23 @@ class CQClf(nn.Module):
 
 
 class MACQClf(nn.Module):
-    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, questionMaxLen=40, with_mask=False, version="v1", gloveVersion="6B") -> None:
+    def __init__(self, numChar, dimChar=20, dimGlove=50, dim=128, with_mask=False, gloveVersion="6B", dropout=0.0) -> None:
         super().__init__()
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, gloveVersion=gloveVersion, dropout=dropout
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
         self.embed_enc = EmbeddingEncoder(dim)
         # [B, sent_length, 128]
-        # self.lnorm1 = nn.LayerNorm(dim)
-        # self.lnorm2 = nn.LayerNorm(dim)
-        self.att = nn.MultiheadAttention(embed_dim=dim, num_heads=8, batch_first=True)
-        self.conv = nn.Conv1d(questionMaxLen, 1, kernel_size=1, bias=False)
-        if version == "v1":
-            output_dim = 400
-        else:
-            output_dim = 401
-        self.start_linear = nn.Linear(dim, output_dim)
-        self.end_linear = nn.Linear(dim, output_dim)
+        self.lnorm1 = nn.LayerNorm(dim)
+        self.lnorm2 = nn.LayerNorm(dim)
+        self.att = nn.MultiheadAttention(embed_dim=dim, num_heads=8, batch_first=True, dropout=dropout)
+        self.lnorm_ffn = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(nn.Linear(in_features=dim, out_features=4*dim), nn.GELU(), nn.Linear(in_features=4*dim, out_features=dim))
+        self.dropout_ffn = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.start_linear = nn.Conv1d(dim, 1, kernel_size=1, bias=False)
+        self.end_linear = nn.Conv1d(dim, 1, kernel_size=1, bias=False)
         self.with_mask = with_mask
 
     def forward(self, c, q):
@@ -394,13 +401,13 @@ class MACQClf(nn.Module):
             q_word_mask = None
         emb_c = self.embed_enc(emb_c, c_word_mask)
         emb_q = self.embed_enc(emb_q, q_word_mask)
-        # emb_c = self.lnorm1(emb_c)
-        # emb_q = self.lnorm2(emb_q)
-        emb = self.att(emb_q, emb_c, emb_c, key_padding_mask=c_word_mask)[0]
-        emb = self.conv(emb).squeeze(1)
+        emb_c = self.lnorm1(emb_c)
+        emb_q = self.lnorm2(emb_q)
+        emb = self.att(emb_c, emb_q, emb_q, key_padding_mask=q_word_mask)[0]
+        emb = emb + self.dropout_ffn(self.ffn(self.lnorm_ffn(emb)))
         # emb_B = self.att(emb_c, emb_q, emb_q)[0]
         # emb = self.linear(emb)
-        return self.start_linear(emb).squeeze(), self.end_linear(emb).squeeze()
+        return self.start_linear(emb.permute(0, 2, 1)).squeeze(1), self.end_linear(emb.permute(0, 2, 1)).squeeze(1)
 
     def count_params(self):
         params = filter(lambda x: x.requires_grad, self.parameters())
@@ -455,7 +462,7 @@ class TFCQClf(nn.Module):
         params = filter(lambda x: x.requires_grad, self.parameters())
         num_params = sum(param.numel() for param in params)
         return f"Trainable Params: {(num_params / 1e6):.2f}M"
-
+    
 class QANet(nn.Module):
     def __init__(
         self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True, gloveVersion="6B"

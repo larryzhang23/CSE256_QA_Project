@@ -110,6 +110,7 @@ def trainer(epochs, trainLoader, valLoader, model, lossFunc, optimizer, lr_sched
         train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
         val_stats = validate(epoch, valLoader, model, device)
         
+        
 
 def lr_scheduler_func(warm_up_iters=1000):
     maxVal = 1 / math.log(warm_up_iters)

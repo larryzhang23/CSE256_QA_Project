@@ -24,9 +24,10 @@ def get_f1_score(pred_start, target_start, pred_end, target_end):
     sample_num = len(pred_start)
     start_max = torch.stack([pred_start, target_start], dim=1).max(dim=1).values
     end_min = torch.stack([pred_end, target_end], dim=1).min(dim=1).values
-    overlap_len = end_min - start_max
-    gt_len = target_end - target_start 
-    pred_len = pred_end - pred_start
+    overlap_len = end_min - start_max + 1
+    gt_len = target_end - target_start + 1
+    pred_len = pred_end - pred_start + 1
+    pred_len = pred_len.masked_fill(pred_len < 0, 0)
     # handle zero length pred_len or zero length gt_len
     unanswerable = torch.logical_or(gt_len == 0, pred_len == 0)
     pred_start_una, pred_end_una = pred_start[unanswerable], pred_end[unanswerable]

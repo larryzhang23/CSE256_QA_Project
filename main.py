@@ -9,6 +9,7 @@ from trainer import trainer, lr_scheduler_func
 
 
 def main():
+    exp_name = "MACQCLF"
     datasetVersion = "v1"
     glove_dim = 300
     char_dim = 200
@@ -16,6 +17,7 @@ def main():
     batch_size = 32
     glove_version = "42B"
     lr = 1e-3
+    dropout = 0.1
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     squadVal = SQuADQANet("validation", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     subsetTrain = squadTrain
@@ -34,8 +36,8 @@ def main():
     # model = InputEmbedClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim)
     # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
-    # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True)
-    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version)
+    model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, gloveVersion=glove_version, dropout=dropout)
+    # model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version)
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
@@ -62,7 +64,7 @@ def main():
 
     with wandb.init(
         project="qanet",
-        name="tfnet-42B-v1dataset",
+        name=exp_name,
         notes="Implementation of qanet",
         config={
             "dataset_version": datasetVersion,
