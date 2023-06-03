@@ -17,7 +17,7 @@ def main():
     batch_size = 32
     glove_version = "42B"
     lr = 1e-3
-    dropout = 0.1
+    dropout = 0.0
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     squadVal = SQuADQANet("validation", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     subsetTrain = squadTrain
