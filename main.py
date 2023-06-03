@@ -3,13 +3,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 import torch.optim as optim
-from model import InputEmbedClf, EmbedEncClf, MACQClf, TFCQClf
+from model import InputEmbedClf, EmbedEncClf, MACQClf, TFCQClf, QANet
 from dataset import SQuADQANet
 from trainer import trainer, lr_scheduler_func
 
 
 def main():
-    exp_name = "MACQCLF"
+    exp_name = "QANET"
     datasetVersion = "v1"
     glove_dim = 300
     char_dim = 200
@@ -32,12 +32,12 @@ def main():
     else:
         device = torch.device("cpu")
     
-    # model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True)
     # model = InputEmbedClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim)
     # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
-    model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, gloveVersion=glove_version, dropout=dropout)
+    # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, gloveVersion=glove_version, dropout=dropout)
     # model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True, gloveVersion=glove_version, dropout=dropout, with_mask=True)
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)

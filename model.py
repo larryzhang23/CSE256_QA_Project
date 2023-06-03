@@ -144,9 +144,10 @@ class EmbeddingEncoder(nn.Module):
 
 
 class ContextQueryAttn(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, dropout=0.0):
         super().__init__()
         self.w0 = nn.Linear(in_features=dim * 3, out_features=1, bias=False)
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
     def forward(self, context, query, context_mask=None, query_mask=None):
         # context shape: [B, sent_length(400), 1, dim], query shape: [B, 1, sent_length(40), dim]
@@ -175,7 +176,8 @@ class ContextQueryAttn(nn.Module):
         if context_mask is not None and query_mask is not None:
             S = torch.nan_to_num(S)
             SS = torch.nan_to_num(SS)
-        SS = torch.nan_to_num(SS)
+        S = self.dropout(S)
+        SS = self.dropout(SS)
         # out shape: [B, 400, dim]
         A = S @ query.squeeze(1)
         B = S @ SS.permute(0, 2, 1) @ context.squeeze(2)
@@ -465,29 +467,33 @@ class TFCQClf(nn.Module):
     
 class QANet(nn.Module):
     def __init__(
-        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True, gloveVersion="6B"
+        self, numChar, dim=128, dimChar=200, dimGlove=300, freeze=True, gloveVersion="6B", dropout=0.0, with_mask=True
     ) -> None:
         super().__init__()
+        self.with_mask = with_mask
         # [B, sent_length, glove_dim + char_dim]
         self.input_emb = InputEmbedding(
-            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze, gloveVersion=gloveVersion
+            numChar=numChar, dimChar=dimChar, dimGlove=dimGlove, freeze=freeze, gloveVersion=gloveVersion, dropout=dropout
         )
         self.map = nn.Conv1d(dimChar + dimGlove, dim, kernel_size=1, bias=False)
-        self.embed_enc = EmbeddingEncoder(embedDim=dim)
-        self.context_query_attn = ContextQueryAttn(dim=dim)
-        self.model_enc = ModelEncoder(embedDim=dim)
+        self.embed_enc = EmbeddingEncoder(embedDim=dim, dropout=dropout)
+        self.context_query_attn = ContextQueryAttn(dim=dim, dropout=dropout)
+        self.model_enc = ModelEncoder(embedDim=dim, dropout=dropout)
         # [B, sent_length, 401]
         self.start_linear = nn.Linear(2 * dim, 1)
         self.end_linear = nn.Linear(2 * dim, 1)
 
     def forward(self, c, q):
         # [B, glove_dim + char_dim]
-        c_word_idx = c["wordIdx"]
-        q_word_idx = q["wordIdx"]
-        word_pad_idx = self.input_emb.wordPadIdx
-        # c_word_mask = c_word_idx == word_pad_idx 
-        # q_word_mask = q_word_idx == word_pad_idx 
-        c_word_mask, q_word_mask = None, None
+        if self.with_mask:
+            c_word_idx = c["wordIdx"]
+            q_word_idx = q["wordIdx"]
+            word_pad_idx = self.input_emb.wordPadIdx
+            c_word_mask = c_word_idx == word_pad_idx 
+            q_word_mask = q_word_idx == word_pad_idx 
+        else:
+            c_word_mask = None
+            q_word_mask = None
         emb_q = self.embed_enc(self.map(self.input_emb(q).permute(0, 2, 1)).permute(0, 2, 1), q_word_mask)
         emb_c = self.embed_enc(self.map(self.input_emb(c).permute(0, 2, 1)).permute(0, 2, 1), c_word_mask)
         A, B = self.context_query_attn(emb_c, emb_q, c_word_mask, q_word_mask)
