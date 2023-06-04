@@ -158,8 +158,11 @@ class SQuADBert(SQuADBase):
         self.tokenized_dataset = self._preprocess()
 
     def _preprocess(self):
+        is_train = "train" in self.split
+
         def dataset_transform(dataset):
             questions = dataset["question"]
+            questions = [q.strip() for q in questions]
             contexts = dataset["context"]
             inputs = self.tokenizer(
                 questions,
@@ -167,51 +170,71 @@ class SQuADBert(SQuADBase):
                 max_length=400,
                 truncation="only_second",
                 return_offsets_mapping=True,
+                return_overflowing_tokens=not is_train,
                 padding="max_length",
             )
 
-            offset_mapping = inputs.pop("offset_mapping")
+            offset_mapping = None
+            if is_train:
+                offset_mapping = inputs.pop("offset_mapping")
+            sample_map = None
+            if not is_train:
+                sample_map = inputs.pop("overflow_to_sample_mapping")
             answers = dataset["answers"]
             start_positions = []
             end_positions = []
+            example_ids = []
 
-            for i, offset in enumerate(offset_mapping):
-                answer = answers[i]
-                start_char = answer["answer_start"][0]
-                end_char = answer["answer_start"][0] + len(answer["text"][0])
-                sequence_ids = inputs.sequence_ids(i)
+            if is_train:
+                for i, offset in enumerate(offset_mapping):
+                    answer = answers[i]
+                    start_char = answer["answer_start"][0]
+                    end_char = answer["answer_start"][0] + len(answer["text"][0])
+                    sequence_ids = inputs.sequence_ids(i)
 
-                idx = 0
-                while sequence_ids[idx] != 1:
-                    idx += 1
-                context_start = idx
-                while sequence_ids[idx] == 1:
-                    idx += 1
-                context_end = idx - 1
-
-                if (
-                    offset[context_start][0] > end_char
-                    or offset[context_end][1] < start_char
-                ):
-                    start_positions.append(0)
-                    end_positions.append(0)
-                else:
-                    idx = context_start
-                    while idx <= context_end and offset[idx][0] <= start_char:
+                    idx = 0
+                    while sequence_ids[idx] != 1:
                         idx += 1
-                    start_positions.append(idx - 1)
+                    context_start = idx
+                    while sequence_ids[idx] == 1:
+                        idx += 1
+                    context_end = idx - 1
 
-                    idx = context_end
-                    while idx >= context_start and offset[idx][1] >= end_char:
-                        idx -= 1
-                    end_positions.append(idx + 1)
+                    if (
+                        offset[context_start][0] > end_char
+                        or offset[context_end][1] < start_char
+                    ):
+                        start_positions.append(0)
+                        end_positions.append(0)
+                    else:
+                        idx = context_start
+                        while idx <= context_end and offset[idx][0] <= start_char:
+                            idx += 1
+                        start_positions.append(idx - 1)
 
-            inputs["start_positions"] = start_positions
-            inputs["end_positions"] = end_positions
+                        idx = context_end
+                        while idx >= context_start and offset[idx][1] >= end_char:
+                            idx -= 1
+                        end_positions.append(idx + 1)
+            else:
+                for i in range(len(inputs["input_ids"])):
+                    sample_idx = sample_map[i]
+                    example_ids.append(dataset["id"][sample_idx])
+
+                    sequence_ids = inputs.sequence_ids(i)
+                    offset = inputs["offset_mapping"][i]
+                    inputs["offset_mapping"][i] = [o if sequence_ids[k] == 1 else None for k, o in enumerate(offset)]
+
+            if is_train:
+                inputs["start_positions"] = start_positions
+                inputs["end_positions"] = end_positions
+            else:
+                inputs["example_id"] = example_ids
+                pass
             return inputs
 
-        tokenized_dataset = self.dataset.map(dataset_transform, batched=True)
-        tokenized_dataset = tokenized_dataset.remove_columns(["id", "title", "context", "question", "answers"])
+        tokenized_dataset = self.dataset.map(dataset_transform, batched=True, remove_columns=self.dataset.column_names)
+        # tokenized_dataset = tokenized_dataset.remove_columns(["id", "title", "context", "question", "answers"])
         tokenized_dataset.set_format("torch")
         return tokenized_dataset
 

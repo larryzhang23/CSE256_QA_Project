@@ -52,7 +52,9 @@ def train_model(model, train_set, accelerator, optimizer, num_train_epochs=5):
 
 
 squad_train = SQuADBert("train[100:200]", "distilbert-base-uncased")
-print(squad_train[1:3])
+squad_val = SQuADBert("validation[10:50]", "distilbert-base-uncased")
+print(squad_train[1:2])
+print(squad_val[1:2])
 
 model = AutoModelForQuestionAnswering.from_pretrained("distilbert-base-uncased")
 optimizer = AdamW(model.parameters(), lr=2e-5)
