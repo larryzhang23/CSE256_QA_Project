@@ -164,6 +164,7 @@ class SQuADBert(SQuADBase):
             inputs = self.tokenizer(
                 questions,
                 contexts,
+                max_length=400,
                 truncation="only_second",
                 return_offsets_mapping=True,
                 padding="max_length",
