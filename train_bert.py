@@ -60,4 +60,13 @@ model = AutoModelForQuestionAnswering.from_pretrained("distilbert-base-uncased")
 optimizer = AdamW(model.parameters(), lr=2e-5)
 accelerator = Accelerator()
 
+with torch.no_grad():
+    squad_val_for_model = squad_val.tokenized_dataset.remove_columns(["example_id", "offset_mapping"])
+    squad_val_for_model.set_format("torch")
+    model, squad_val_for_model = accelerator.prepare(model, squad_val_for_model)
+    model.eval()
+    outputs = model(**squad_val_for_model[:])
+
+    print("pred: ", outputs[0])
+
 train_model(model, train_set=squad_train, accelerator=accelerator, optimizer=optimizer)
