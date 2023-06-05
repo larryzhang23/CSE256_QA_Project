@@ -28,7 +28,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         optimizer.step()
         best_pred_start, best_pred_end = predict(pred_start, pred_end)
         acc = get_em(best_pred_start, target_start, best_pred_end, target_end)
-        f1 = get_f1_score(pred_start, target_start, pred_end, target_end)
+        f1 = get_f1_score(best_pred_start, target_start, best_pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
         avg_f1 += f1
