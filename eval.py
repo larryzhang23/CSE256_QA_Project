@@ -1,12 +1,10 @@
 import torch
 
 def get_em(pred_start, target_start, pred_end, target_end):
-    pred_start_idx = torch.argmax(pred_start.detach(), dim=1)
-    pred_end_idx = torch.argmax(pred_end.detach(), dim=1)
-    correct_start = pred_start_idx == target_start
-    correct_end = pred_end_idx == target_end
+    correct_start = pred_start == target_start
+    correct_end = pred_end == target_end
     correct = torch.logical_and(correct_start, correct_end)
-    acc = torch.sum(correct).item() / len(pred_start_idx)
+    acc = torch.mean(correct).item()
     return acc
 
 
@@ -19,15 +17,12 @@ def get_em_max(pred_start, pred_end, targets):
         
 
 def get_f1_score(pred_start, target_start, pred_end, target_end):
-    pred_start = torch.argmax(pred_start.detach(), dim=1)
-    pred_end = torch.argmax(pred_end.detach(), dim=1)
     sample_num = len(pred_start)
     start_max = torch.stack([pred_start, target_start], dim=1).max(dim=1).values
     end_min = torch.stack([pred_end, target_end], dim=1).min(dim=1).values
     overlap_len = end_min - start_max + 1
     gt_len = target_end - target_start + 1
     pred_len = pred_end - pred_start + 1
-    pred_len = pred_len.masked_fill(pred_len < 0, 0)
     # handle zero length pred_len or zero length gt_len
     unanswerable = torch.logical_or(gt_len == 0, pred_len == 0)
     pred_start_una, pred_end_una = pred_start[unanswerable], pred_end[unanswerable]

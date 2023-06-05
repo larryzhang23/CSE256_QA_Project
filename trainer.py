@@ -2,6 +2,7 @@ import math
 import torch
 import wandb
 from eval import get_em, get_em_max, get_f1_score, get_f1_score_max
+from model import predict
 
 def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     avg_acc, avg_f1, avg_loss = 0, 0, 0
@@ -21,11 +22,12 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         loss_start = lossFunc(pred_start, target_start)
         loss_end = lossFunc(pred_end, target_end)
         
-        loss = loss_start + loss_end
+        loss = (loss_start + loss_end) / 2
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
         optimizer.step()
-        acc = get_em(pred_start, target_start, pred_end, target_end)
+        best_pred_start, best_pred_end = predict(pred_start, pred_end)
+        acc = get_em(best_pred_start, target_start, best_pred_end, target_end)
         f1 = get_f1_score(pred_start, target_start, pred_end, target_end)
         avg_loss += loss.item()
         avg_acc += acc
@@ -83,6 +85,7 @@ def validate(epoch, valLoader, model, device, ema=None):
             questionDict["charIdx"] = questionDict["charIdx"].to(device, non_blocking=True)
 
             pred_start, pred_end = model(contextDict, questionDict)
+            pred_start, pred_end = predict(pred_start, pred_end)
             acc = get_em_max(pred_start, pred_end, targets)
             f1 = get_f1_score_max(pred_start, pred_end, targets)
             avg_acc += acc

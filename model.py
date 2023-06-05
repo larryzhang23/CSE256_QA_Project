@@ -255,6 +255,15 @@ class ModelEncoderV2(nn.Module):
         return M0
 
 
+def predict(pred_start, pred_end):
+    pred_start_prob, pred_end_prob = F.softmax(pred_start, dim=1), F.softmax(pred_end, dim=1)
+    pred_matrix = torch.triu(pred_start_prob.unsqueeze(2) @ pred_end_prob.unsqueeze(1))
+    best_end_vals, _ = pred_matrix.max(dim=2)
+    best_start_vals, _ = pred_matrix.max(dim=1)
+    best_start = torch.argmax(best_end_vals, dim=1)
+    best_end = torch.argmax(best_start_vals, dim=1)
+    return best_start, best_end
+
 class InputEmbedClf(nn.Module):
     def __init__(self, numChar, dimChar=20, dimGlove=50, version="v1", gloveVersion="6B") -> None:
         super().__init__()
@@ -505,7 +514,7 @@ class QANet(nn.Module):
         pred_start = self.start_linear(emb_st).squeeze()
         pred_end = self.end_linear(emb_en).squeeze()
         return pred_start, pred_end
-    
+
     def count_params(self):
         params = filter(lambda x: x.requires_grad, self.parameters())
         num_params = sum(param.numel() for param in params)

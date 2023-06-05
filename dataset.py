@@ -65,14 +65,11 @@ class SQuADQANet(SQuADBase, Dataset):
         print("Preparing Dataset...")
         self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
-        for i, sample in enumerate(self.dataset):
-            if len(sample["context"]) <= self.contextMaxLen:
-                self.legalDataIdx.append(i)
-        self.contextMaxLen = self.contextMaxLen
         self.questionMaxLen = questionMaxLen
         self.glove = GloVe(name=glove_version, dim=glove_dim)
         self.char2idx = self._get_char2idx()
         self.idxHead = 0
+        self._helper()
 
     def __len__(self):
         return len(self.legalDataIdx)
@@ -88,34 +85,28 @@ class SQuADQANet(SQuADBase, Dataset):
 
         raise StopIteration
 
-    def _helper(self, item):
-        if self.split == "train":
-            if item["answers"]["answer_start"]:
-                startIdx = item["answers"]["answer_start"][0]
-                text = item["answers"]["text"][0]
-                item["answers"]["text"] = text
-                item["answers"]["index"] = (startIdx, startIdx + len(text) - 1)
-                item["answers"].pop("answer_start")
-            else:
-                # for unanswerable questions, set startIdx = 400, endIdx = 400
-                item["answers"]["text"] = ""
-                item["answers"]["index"] = (self.contextMaxLen, self.contextMaxLen)
-                item["answers"].pop("answer_start")
-        else:
-            if item["answers"]["answer_start"]:
-                answer_lst = []
-                for text, start_idx in zip(item["answers"]["text"], item["answers"]["answer_start"]):
-                    end_idx = start_idx + len(text) - 1
-                    answer_lst.append((start_idx, end_idx))
-                if len(answer_lst) < 6:
-                    answer_lst.extend([answer_lst[-1] for _ in range(6 - len(answer_lst))])
-                item["answers"]["index"] = answer_lst
-                item["answers"].pop("answer_start")
-            else:
-                item["answers"]["index"] = [(self.contextMaxLen, self.contextMaxLen) for _ in range(6)]
-                item["answers"].pop("answer_start")
-            
-        return item
+    def _helper(self):
+        self.index = []
+        self.spans = []
+        for i, sample in enumerate(self.dataset):
+            context = sample["context"].lower().replace("''", '" ').replace("``", '" ')
+            tokens = word_tokenize(context)
+            if len(tokens) > self.contextMaxLen:
+                continue
+            self.legalDataIdx.append(i)
+            spans = self._convert_idx(context, tokens)
+            ansIdx = []
+            for text, startIdx in zip(sample["answers"]["text"], sample["answers"]["answer_start"]):
+                endIdx = startIdx + len(text)
+                answerTokenids = []
+                for idx, span in enumerate(spans):
+                    if endIdx <= span[0] or startIdx >= span[1]:
+                        continue
+                    answerTokenids.append(idx)
+                if answerTokenids:
+                    ansIdx.append((answerTokenids[0], answerTokenids[-1]))
+            self.spans.append(spans)
+            self.index.append(ansIdx)
 
     def _get_embedding_idx(self, sent, word_length=16, sent_length=400):
         tokens = word_tokenize(sent.lower().replace("''", '" ').replace("``", '" '))
@@ -160,22 +151,44 @@ class SQuADQANet(SQuADBase, Dataset):
         char2idx["pad"] = vocab_size + 1
         return char2idx
 
+    def _convert_idx(self, text, tokens):
+        current = 0
+        spans = []
+        for token in tokens:
+            current = text.find(token, current)
+            if current < 0:
+                print("Token {} cannot be found".format(token))
+                raise Exception()
+            spans.append((current, current + len(token) - 1))
+            current += len(token)
+        return spans
+    
     def __getitem__(self, idx):
         elemIdx = self.legalDataIdx[idx]
         item = self.dataset[elemIdx]
-        item = self._helper(item)
         contextDict = self._get_embedding_idx(
             item["context"], sent_length=self.contextMaxLen
         )
         questionDict = self._get_embedding_idx(
             item["question"], sent_length=self.questionMaxLen
         )
-        index = torch.tensor(item["answers"]["index"], dtype=torch.int64)
+        index = self.index[idx]
+        if self.split == "validation":
+            if 0 < len(index) < 6:
+                index.extend([index[0] for _ in range(6 - len(index))])
+        else:
+            index = index[0]
+        index = torch.tensor(index, dtype=torch.int64)
         return contextDict, questionDict, index
 
     @property
     def charSetSize(self):
         return len(self.char2idx)
+    
+    def getSampleMeta(self, idx):
+        elemIdx = self.legalDataIdx[idx]
+        item = self.dataset[elemIdx]
+        return item["context"], item["spans"], item["id"]
 
 
 # Test code
