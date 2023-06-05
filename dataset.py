@@ -89,10 +89,19 @@ class SQuADQANet(SQuADBase, Dataset):
         self.index = []
         self.spans = []
         for i, sample in enumerate(self.dataset):
+            removeIdx = []
+            for i, answer in enumerate(sample["answers"]["text"]):
+                answer = answer.lower().replace("''", '" ').replace("``", '" ')
+                ansTokens = word_tokenize(answer)
+                if len(ansTokens) > self.questionMaxLen:
+                    removeIdx.append(i)
             context = sample["context"].lower().replace("''", '" ').replace("``", '" ')
             tokens = word_tokenize(context)
-            if len(tokens) > self.contextMaxLen:
+            if len(tokens) > self.contextMaxLen or len(removeIdx) == len(sample["answers"]["text"]):
                 continue
+            for idx in removeIdx:
+                sample["answers"]["text"].pop(idx)
+                sample["answers"]["answer_start"].pop(idx)
             self.legalDataIdx.append(i)
             spans = self._convert_idx(context, tokens)
             ansIdx = []
