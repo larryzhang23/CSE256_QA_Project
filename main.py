@@ -15,7 +15,7 @@ def main():
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    exp_name = "QANET"
+    exp_name = "TFNET"
     datasetVersion = "v1"
     glove_dim = 300
     char_dim = 200
