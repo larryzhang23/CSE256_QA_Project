@@ -4,7 +4,7 @@ def get_em(pred_start, target_start, pred_end, target_end):
     correct_start = pred_start == target_start
     correct_end = pred_end == target_end
     correct = torch.logical_and(correct_start, correct_end)
-    acc = torch.mean(correct).item()
+    acc = torch.mean(correct.float()).item()
     return acc
 
 
