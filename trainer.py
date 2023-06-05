@@ -22,7 +22,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         loss_start = lossFunc(pred_start, target_start)
         loss_end = lossFunc(pred_end, target_end)
         
-        loss = (loss_start + loss_end) / 2
+        loss = loss_start + loss_end
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
         optimizer.step()
