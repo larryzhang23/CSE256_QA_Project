@@ -1,4 +1,5 @@
 import random
+import copy
 import numpy as np
 import wandb
 import torch
@@ -25,17 +26,23 @@ def main():
     glove_version = "42B"
     lr = 1e-3
     dropout = 0.0
-    squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
+    squadTrain = SQuADQANet(version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
     print(f"Training samples: {len(squadTrain)}")
-    squadVal = SQuADQANet("validation", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
+    squadVal = copy.deepcopy(squadTrain)
+    squadVal.setSplit("validation")
     print(f"Validation samples: {len(squadVal)}")
-    subsetTrain = squadTrain
-    subsetVal = squadVal
-    # subsetTrain = Subset(squadTrain, [i for i in range(32)])
-    # subsetVal = Subset(squadVal, [i for i in range(32)])
-    trainLoader = DataLoader(subsetTrain, batch_size=batch_size, shuffle=True)
-    valLoader = DataLoader(subsetVal, batch_size=batch_size, shuffle=False)
-  
+    del squadVal.train_dataset
+    del squadVal.train_spans
+    del squadVal.train_index
+    del squadVal.trainLegalDataIdx
+    del squadTrain.val_dataset
+    del squadTrain.val_spans
+    del squadTrain.val_index
+    del squadTrain.valLegalDataIdx
+    
+    trainLoader = DataLoader(squadTrain, batch_size=batch_size, shuffle=True, pin_memory=True)
+    valLoader = DataLoader(squadVal, batch_size=batch_size, shuffle=False)
+    
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
     else:
@@ -45,8 +52,8 @@ def main():
     # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
     # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, gloveVersion=glove_version, dropout=dropout)
-    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version, dropout=dropout, questionMaxLen=questionLen)
-    # model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True, gloveVersion=glove_version, dropout=dropout, with_mask=True)
+    # model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version, dropout=dropout, questionMaxLen=questionLen)
+    model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True, gloveVersion=glove_version, dropout=dropout, with_mask=True)
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)

@@ -39,7 +39,7 @@ class SQuADBase:
         return str(self.dataset)
 
 
-class SQuADQANet(SQuADBase, Dataset):
+class SQuADQANet(Dataset):
 
     """SQuAD dataset specialized for QANet
 
@@ -54,41 +54,51 @@ class SQuADQANet(SQuADBase, Dataset):
 
     def __init__(
             self, 
-            split: str, 
             questionMaxLen: int = 50, 
             contextMaxLen: int = 400, 
             version: str = "v1", 
             glove_version: str = "6B", 
             glove_dim=300
         ):
-        super().__init__(version, split)
-        print(f"Preparing {split} dataset...")
-        self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
         self.questionMaxLen = questionMaxLen
         self.glove = GloVe(name=glove_version, dim=glove_dim)
+        self.trainLegalDataIdx = []
+        self.valLegalDataIdx = []
+        self.train_dataset = SQuADBase(version, "train")
+        print("Preparing train dataset...")
+        self._helper("train")
         self.char2idx = self._get_char2idx()
-        self.idxHead = 0
-        self._helper()
+
+        print("Preparaing val dataset...")
+        self.val_dataset = SQuADBase(version, "validation")
+        self._helper("validation")
+        self.split = "train"
+       
 
     def __len__(self):
-        return len(self.legalDataIdx)
+        if self.split == "train":
+            return len(self.trainLegalDataIdx)
+        else:
+            return len(self.valLegalDataIdx)
 
-    def __iter__(self):
-        return self
+    def _helper(self, split):
+        if split == "train":
+            self.train_index = []
+            self.train_spans = []
+            this_index = self.train_index 
+            this_spans = self.train_spans
+            dataset = self.train_dataset
+            legalIdx = self.trainLegalDataIdx
+        else:
+            self.val_index = []
+            self.val_spans = []
+            this_index = self.val_index 
+            this_spans = self.val_spans
+            dataset = self.val_dataset
+            legalIdx = self.valLegalDataIdx
 
-    def __next__(self):
-        if self.idxHead < len(self.legalDataIdx):
-            idx = self.idxHead
-            self.idxHead += 1
-            return self[idx]
-
-        raise StopIteration
-
-    def _helper(self):
-        self.index = []
-        self.spans = []
-        for i, sample in enumerate(self.dataset):
+        for i, sample in enumerate(dataset):
             removeIdx = []
             for i, answer in enumerate(sample["answers"]["text"]):
                 answer = answer.lower().replace("''", '" ').replace("``", '" ')
@@ -102,7 +112,7 @@ class SQuADQANet(SQuADBase, Dataset):
             for idx in removeIdx:
                 sample["answers"]["text"].pop(idx)
                 sample["answers"]["answer_start"].pop(idx)
-            self.legalDataIdx.append(i)
+            legalIdx.append(i)
             spans = self._convert_idx(context, tokens)
             ansIdx = []
             for text, startIdx in zip(sample["answers"]["text"], sample["answers"]["answer_start"]):
@@ -120,8 +130,8 @@ class SQuADQANet(SQuADBase, Dataset):
                     print(startIdx, endIdx)
                     print(tokens)
                     raise Exception("error")
-            self.spans.append(spans)
-            self.index.append(ansIdx)
+            this_spans.append(spans)
+            this_index.append(ansIdx)
 
     def _get_embedding_idx(self, sent, word_length=16, sent_length=400):
         tokens = word_tokenize(sent.lower().replace("''", '" ').replace("``", '" '))
@@ -152,14 +162,17 @@ class SQuADQANet(SQuADBase, Dataset):
 
     def _get_char2idx(self):
         charSet = set()
-        for elemIdx in self.legalDataIdx:
-            article = self.dataset[elemIdx]
+        for elemIdx in self.trainLegalDataIdx:
+            article = self.train_dataset[elemIdx]
             context, question = article["context"], article["question"]
-            context, question = context.lower(), question.lower()
-            context = context.replace("''", '" ').replace("``", '" ')
-            question = question.replace("''", '" ').replace("``", '" ')
-            charSet.update(question)
-            charSet.update(context)
+            context = context.lower().replace("''", '" ').replace("``", '" ')
+            question = question.lower().replace("''", '" ').replace("``", '" ')
+            contextTokens = word_tokenize(context)
+            questionTokens = word_tokenize(question)
+            for token in contextTokens:
+                charSet.update(token)
+            for token in questionTokens:
+                charSet.update(token)
         char2idx = {c: idx for idx, c in enumerate(charSet)}
         vocab_size = len(char2idx)
         char2idx["unk"] = vocab_size
@@ -179,15 +192,21 @@ class SQuADQANet(SQuADBase, Dataset):
         return spans
     
     def __getitem__(self, idx):
-        elemIdx = self.legalDataIdx[idx]
-        item = self.dataset[elemIdx]
+        if self.split == "train":
+            elemIdx = self.trainLegalDataIdx[idx]
+            item = self.train_dataset[elemIdx]
+            index_set = self.train_index
+        else:
+            elemIdx = self.valLegalDataIdx[idx]
+            item = self.val_dataset[elemIdx]
+            index_set = self.val_index
         contextDict = self._get_embedding_idx(
             item["context"], sent_length=self.contextMaxLen
         )
         questionDict = self._get_embedding_idx(
             item["question"], sent_length=self.questionMaxLen
         )
-        index = self.index[idx]
+        index = index_set[idx]
         if self.split == "validation":
             if 0 < len(index) < 6:
                 index.extend([index[0] for _ in range(6 - len(index))])
@@ -199,6 +218,10 @@ class SQuADQANet(SQuADBase, Dataset):
     @property
     def charSetSize(self):
         return len(self.char2idx)
+    
+    def setSplit(self, split):
+        assert split in ["train", "validation"]
+        self.split = split
     
     def getSampleMeta(self, idx):
         elemIdx = self.legalDataIdx[idx]
