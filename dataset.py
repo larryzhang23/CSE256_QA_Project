@@ -55,14 +55,14 @@ class SQuADQANet(SQuADBase, Dataset):
     def __init__(
             self, 
             split: str, 
-            questionMaxLen: int = 40, 
+            questionMaxLen: int = 50, 
             contextMaxLen: int = 400, 
             version: str = "v1", 
             glove_version: str = "6B", 
             glove_dim=300
         ):
         super().__init__(version, split)
-        print("Preparing Dataset...")
+        print(f"Preparing {split} dataset...")
         self.legalDataIdx = []
         self.contextMaxLen = contextMaxLen
         self.questionMaxLen = questionMaxLen
@@ -105,6 +105,12 @@ class SQuADQANet(SQuADBase, Dataset):
                     answerTokenids.append(idx)
                 if answerTokenids:
                     ansIdx.append((answerTokenids[0], answerTokenids[-1]))
+                else:
+                    print(sample)
+                    print(spans)
+                    print(startIdx, endIdx)
+                    print(tokens)
+                    raise Exception("error")
             self.spans.append(spans)
             self.index.append(ansIdx)
 
@@ -159,7 +165,7 @@ class SQuADQANet(SQuADBase, Dataset):
             if current < 0:
                 print("Token {} cannot be found".format(token))
                 raise Exception()
-            spans.append((current, current + len(token) - 1))
+            spans.append((current, current + len(token)))
             current += len(token)
         return spans
     

@@ -94,8 +94,8 @@ def validate(epoch, valLoader, model, device, ema=None):
 
             ## debug
             if it == 0:
-                pred_start = torch.argmax(pred_start, dim=1)
-                pred_end = torch.argmax(pred_end, dim=1)
+                pred_start, pred_end = model(contextDict, questionDict)
+                pred_start, pred_end = predict(pred_start, pred_end)
                 pred_start = pred_start.cpu().numpy().tolist()
                 pred_end = pred_end.cpu().numpy().tolist()
                 print("pred: ", list(zip(pred_start, pred_end)))
@@ -111,8 +111,8 @@ def validate(epoch, valLoader, model, device, ema=None):
 
 def trainer(epochs, trainLoader, valLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     for epoch in range(epochs):
-        train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
         val_stats = validate(epoch, valLoader, model, device)
+        train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
         
         
 
