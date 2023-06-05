@@ -44,8 +44,8 @@ def main():
     # model = EmbedEncClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=False, version=datasetVersion)
     # model = CQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim)
     # model = MACQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, gloveVersion=glove_version, dropout=dropout)
-    # model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version)
-    model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True, gloveVersion=glove_version, dropout=dropout, with_mask=True)
+    model = TFCQClf(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, dim=dim, with_mask=True, version=datasetVersion, gloveVersion=glove_version, dropout=dropout)
+    # model = QANet(numChar=squadTrain.charSetSize, dimChar=char_dim, dimGlove=glove_dim, freeze=True, gloveVersion=glove_version, dropout=dropout, with_mask=True)
     
     print(f"Model parameters: {model.count_params()}")
     model.to(device)
