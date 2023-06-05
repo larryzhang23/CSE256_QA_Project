@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 import torch.optim as optim
-from model import InputEmbedClf, EmbedEncClf, MACQClf, TFCQClf, QANet
+from model import InputEmbedClf, EmbedEncClf, MACQClf, TFCQClf, QANet, EMA
 from dataset import SQuADQANet
 from trainer import trainer, lr_scheduler_func
 
@@ -19,7 +19,9 @@ def main():
     lr = 1e-3
     dropout = 0.0
     squadTrain = SQuADQANet("train", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
+    print(f"Training samples: {len(squadTrain)}")
     squadVal = SQuADQANet("validation", version=datasetVersion, glove_version=glove_version, glove_dim=glove_dim)
+    print(f"Validation samples: {len(squadVal)}")
     subsetTrain = squadTrain
     subsetVal = squadVal
     # subsetTrain = Subset(squadTrain, [i for i in range(32)])
@@ -50,11 +52,11 @@ def main():
     )
 
     # exponential moving average
-    ema = None
-    # ema = EMA(0.9999)
-    # for name, param in model.named_parameters():
-    #     if param.requires_grad:
-    #         ema.register(name, param.data)
+    # ema = None
+    ema = EMA(0.9999)
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            ema.register(name, param.data)
     
     # lr_scheduler = None
     warm_up_iters = 1000
