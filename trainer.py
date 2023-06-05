@@ -35,7 +35,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
         lr = get_lr(optimizer)
         wandb.log({"train_loss": loss.item(), "train_em_acc": acc, "train_f1_score": f1, "lr": lr})
         if it > 0 and it % 20 == 0:
-            print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {f1:.3f} -- lr: {lr:.4f}")
+            print(f"[Epoch:{epoch}/{it}] -- loss: {loss.item():.4f} -- EM acc: {(acc * 100):.2f}% -- F1 score: {(f1 * 100):.2f} -- lr: {lr:.4f}")
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -49,7 +49,7 @@ def train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler
     avg_f1 /= len(trainLoader)
     avg_loss /= len(trainLoader)
     print("=================")
-    print(f"[Epoch:{epoch}] -- Train avg loss: {avg_loss:.4f} -- Train avg EM acc: {(avg_acc * 100):.2f}% -- Train avg F1 score: {avg_f1:.3f}")
+    print(f"[Epoch:{epoch}] -- Train avg loss: {avg_loss:.4f} -- Train avg EM acc: {(avg_acc * 100):.2f}% -- Train avg F1 score: {(avg_f1 * 100):.2f}")
 
     ### debug ###
     if epoch > 0 and epoch % 5 == 0:
@@ -104,15 +104,15 @@ def validate(epoch, valLoader, model, device, ema=None):
 
     avg_acc /= len(valLoader)
     avg_f1 /= len(valLoader)
-    print(f"[Epoch:{epoch}] -- Val avg EM acc: {(avg_acc * 100):.2f}% -- Val avg F1 score: {avg_f1:.3f}")
+    print(f"[Epoch:{epoch}] -- Val avg EM acc: {(avg_acc * 100):.2f}% -- Val avg F1 score: {(avg_f1 * 100):.2f}")
     val_dict = {"val_avg_em_acc": avg_acc, "val_avg_f1_score": avg_f1}
     wandb.log(val_dict)
     return val_dict
 
 def trainer(epochs, trainLoader, valLoader, model, lossFunc, optimizer, lr_scheduler, device, ema=None):
     for epoch in range(epochs):
-        val_stats = validate(epoch, valLoader, model, device)
         train_stats = train_one_epoch(epoch, trainLoader, model, lossFunc, optimizer, lr_scheduler, device, ema)
+        val_stats = validate(epoch, valLoader, model, device)
         
         
 
