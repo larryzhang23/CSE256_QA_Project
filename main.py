@@ -59,11 +59,11 @@ def main():
     )
 
     # exponential moving average
-    # ema = None
-    ema = EMA(0.9999)
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            ema.register(name, param.data)
+    ema = None
+    # ema = EMA(0.9999)
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         ema.register(name, param.data)
     
     # lr_scheduler = None
     warm_up_iters = 1000
