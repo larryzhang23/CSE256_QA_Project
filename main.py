@@ -1,3 +1,5 @@
+import random
+import numpy as np
 import wandb
 import torch
 import torch.nn as nn
@@ -9,6 +11,10 @@ from trainer import trainer, lr_scheduler_func
 
 
 def main():
+    seed = 2023
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     exp_name = "QANET"
     datasetVersion = "v1"
     glove_dim = 300
