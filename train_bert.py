@@ -60,7 +60,7 @@ def calculate_f1(predicted_answers, theoretical_answers):
                 )
             if current_f1 > best_f1:
                 best_f1 = current_f1
-        if len(pred) == 0 and len(theoretical_answers["answers"]["text"]) == 0:
+        if len(pred) == 0 and len(theoretical_answer["answers"]["text"]) == 0:
             best_f1 = 1.0
         overall_f1 += best_f1
         # print(best_f1)
@@ -105,6 +105,9 @@ def predict_answers(model, dataloader, val_set):
     start_logits = []
     end_logits = []
 
+    print("predicting...")
+    num_eval_steps = len(dataloader)
+    progress_bar = tqdm(range(num_eval_steps))
     for step, batch in enumerate(dataloader):
         features = {k: v.to(model.device) for k, v in batch.items()}
         outputs = model(**features)
@@ -112,14 +115,18 @@ def predict_answers(model, dataloader, val_set):
         start_logits += list(outputs.start_logits.cpu().numpy())
         end_logits += list(outputs.end_logits.cpu().numpy())
 
+        progress_bar.update(1)
+
+    print("preprocessing...")
     example_to_features = collections.defaultdict(list)
-    for idx, feature in enumerate(val_set):
+    for idx, feature in tqdm(enumerate(val_set)):
         example_to_features[feature["example_id"]].append(idx)
 
-    n_best = 10
+    n_best = 1
     max_answer_length = 30
 
-    for example in val_set.dataset:
+    print("generating answers:")
+    for example in tqdm(val_set.dataset):
         example_id = example["id"]
         context = example["context"]
         answers = []
@@ -146,18 +153,17 @@ def predict_answers(model, dataloader, val_set):
                     answers.append(
                         {
                             "text": context[
-                                offsets[start_index]
-                                .cpu()[0]
-                                .item() : offsets[end_index]
-                                .cpu()[1]
-                                .item()
+                                offsets[start_index][0] : offsets[end_index][1]
                             ],
                             "logit_score": start_logit[start_index]
                             + end_logit[end_index],
                         }
                     )
 
-            best_answer = max(answers, key=lambda x: x["logit_score"])
+            if len(answers) == 0:
+                best_answer = {"text": "", "logit_score": 0}
+            else:
+                best_answer = max(answers, key=lambda x: x["logit_score"])
             predicted_answers.append(
                 {"id": example_id, "prediction_text": best_answer["text"]}
             )
@@ -184,10 +190,11 @@ def train_model(
     accelerator,
     optimizer,
     num_train_epochs=5,
-    val_batch_size=20,
+    train_batch_size=32,
+    val_batch_size=64,
 ):
     train_dataloader = DataLoader(
-        train_set, shuffle=True, collate_fn=default_data_collator, batch_size=16
+        train_set, shuffle=True, collate_fn=default_data_collator, batch_size=train_batch_size
     )
     val_for_model = val_set.tokenized_dataset.remove_columns(
         ["example_id", "offset_mapping"]
@@ -230,12 +237,14 @@ def train_model(
 if __name__ == "__main__":
     model_name = "distilbert-base-uncased"
     # model_name = "distilbert-base-cased-distilled-squad"
+    # model_name = "./weights/albert_1_epoch"
     squad_train = SQuADBert("train[:100]", model_name)
-    val_set = SQuADBert("validation[:100]", model_name)
+    val_set = SQuADBert("validation", model_name)
     # print(squad_train[1:2])
     # print(squad_val[1:2])
 
-    model = AutoModelForQuestionAnswering.from_pretrained(model_name)
+    # model = AutoModelForQuestionAnswering.from_pretrained(model_name)
+    model = AutoModelForQuestionAnswering.from_pretrained("./weights/albert_1_epoch")
     optimizer = AdamW(model.parameters(), lr=2e-5)
     accelerator = Accelerator()
 

@@ -188,6 +188,10 @@ class SQuADBert(SQuADBase):
             if is_train:
                 for i, offset in enumerate(offset_mapping):
                     answer = answers[i]
+                    if len(answer["answer_start"]) == 0:
+                        start_positions.append(0)
+                        end_positions.append(0)
+                        continue
                     start_char = answer["answer_start"][0]
                     end_char = answer["answer_start"][0] + len(answer["text"][0])
                     sequence_ids = inputs.sequence_ids(i)
@@ -235,7 +239,8 @@ class SQuADBert(SQuADBase):
 
         tokenized_dataset = self.dataset.map(dataset_transform, batched=True, remove_columns=self.dataset.column_names)
         # tokenized_dataset = tokenized_dataset.remove_columns(["id", "title", "context", "question", "answers"])
-        tokenized_dataset.set_format("torch")
+        if is_train:
+            tokenized_dataset.set_format("torch")
         return tokenized_dataset
 
     def __iter__(self):
