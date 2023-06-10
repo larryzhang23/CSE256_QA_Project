@@ -93,6 +93,8 @@ def train_one_epoch(model, dataloader, accelerator, optimizer, lr_scheduler):
             model, batch, accelerator, optimizer, lr_scheduler
         )
         progress_bar.update(1)
+        if step == num_training_steps - 1 or step % 5 == 0:
+            progress_bar.set_description(f"Training loss: {total_loss / (step + 1)}")
 
     return total_loss / len(dataloader)
 
@@ -226,11 +228,11 @@ def train_model(
         loss = train_one_epoch(
             model, train_dataloader, accelerator, optimizer, lr_scheduler
         )
-        eval_result = evaluate_model(
-            model=model, dataloader=val_dataloader, val_set=val_set
-        )
+        # eval_result = evaluate_model(
+        #     model=model, dataloader=val_dataloader, val_set=val_set
+        # )
         print(f"Loss: {loss}")
-        print(f"Evaluation: EM={eval_result['em']}, F1={eval_result['f1']}")
+        # print(f"Evaluation: EM={eval_result['em']}, F1={eval_result['f1']}")
         print()
 
 
